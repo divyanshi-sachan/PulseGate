@@ -8,7 +8,7 @@ export default defineConfig({
   resolve: { conditions },
   ssr: { resolve: { conditions, externalConditions: ['@pulsegate/source'] } },
   test: {
-    include: ['{apps,packages,examples}/*/src/**/*.test.ts', 'tests/**/*.test.ts'],
+    include: ['{apps,packages,examples}/*/{src,test}/**/*.test.ts', 'tests/**/*.test.ts'],
     environment: 'node',
   },
 });

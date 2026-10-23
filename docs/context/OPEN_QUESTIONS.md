@@ -32,10 +32,6 @@ with the ADR link. `[blocks: X]` marks the phase or component that can't be fina
 - **Q14 — Version reference mismatch.** system_design_specification.md says "Addendum to PRD v1.1"; prd.md is v1.0.
   *Proposed:* treat prd.md as current; fix the header when convenient.
 
-- **Q17 — `X-Request-ID` handling.** Should the gateway accept a client-supplied `X-Request-ID`, and does it forward its
-  ID to upstreams? *Proposed:* always generate its own ID (ignore the incoming value, or log it as `clientRequestId` only after
-  validating length/charset), send it upstream as `X-Request-ID`, and return it in the response.
-
 ## Resolved
 
 - **Q1 → [ADR-0013](../adr/0013-routes-reference-upstream-id.md):** routes must use `upstreamId`; URLs live only in top-level `upstreams[]`; inline route URLs unsupported.
@@ -48,3 +44,4 @@ with the ADR link. `[blocks: X]` marks the phase or component that can't be fina
 - **Q16 → [ADR-0021](../adr/0021-header-forwarding.md):** strip hop-by-hop (both directions) and `X-API-Key`; `Authorization` only via `forwarding.authorization`; rebuild `X-Forwarded-*` from `server.trustedProxies`.
 - **Q15 → [ADR-0022](../adr/0022-operations-listener.md):** operations listener on 9091 bound to 127.0.0.1 serves `/health`, `/ready`, `/metrics`, independent of admin.
 - **Q12 → [ADR-0024](../adr/0024-breaker-failure-classification.md):** consecutive failures per upstream attempt; `failureStatuses` default [500,502,503,504]; `UPSTREAM_RESPONSE_TOO_LARGE` counts once, never retried; gateway 4xx, upstream 4xx, client aborts and `CIRCUIT_OPEN` never count.
+- **Q17 → [ADR-0027](../adr/0027-request-ids.md):** always generate `req_<uuid>`; incoming `X-Request-ID` discarded; sent upstream and returned.

@@ -21,6 +21,7 @@ path (root base path becomes `""`).
 2. Split at the first `?` into `rawPath` and `rawQuery` (which may be absent or empty).
 3. Validate `rawPath`: it must start with `/`; it must have valid percent-encoding; no segment may be `.` or `..`,
    raw or percent-encoded (`%2e`, `%2E`, `.%2e`, …). Any violation → **400 `BAD_REQUEST`** (ADR-0018), before route matching.
+   A raw `\` in the path is also rejected (ADR-0028).
 4. Match routes against `rawPath` byte-for-byte using ADR-0017's segment rules. A percent-encoded
    spelling of a prefix (e.g. `/api/%6Frders`) does not match it.
 5. Forwarded path: `rawPath`, or, with `stripPrefix: true`, `rawPath` with the matched prefix removed (empty → `/`).

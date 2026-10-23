@@ -88,3 +88,15 @@ Format: date · goal · what changed · decisions (ADR links) · open threads.
 - **Changed:** user committed `packages/config` as 991a3a6 and pushed to origin (github.com/divyanshi-sachan/PulseGate).
   Added "Git workflow" to CLAUDE.md; STATE repo note updated.
 - **Decisions:** from now on Claude gives commit commands and waits for the user to commit; Claude doesn't commit or push.
+
+## 2026-10-23 · Phase 1: apps/gateway proxy
+- **Goal:** Fastify server, RouteRegistry, UpstreamRegistry and ProxyService.
+- **Changed:** user committed the workflow docs. Added `apps/gateway` (routing/, proxy/, app.ts, main.ts; fastify 5.12.7, undici 8.12.3),
+  unit tests in src/ and integration tests + harness in test/; vitest/tsconfig now include `*/test/`. ADRs 0027, 0028; ADR-0019 note;
+  Q17 resolved; CLAUDE.md, STATE updated.
+- **Decisions:** [0027](../adr/0027-request-ids.md) (user: always generate request IDs); [0028](../adr/0028-gateway-implementation-notes.md)
+  (Claude, pending review): backslash → 400, Expect stripped, deadline covers body streaming, PULSEGATE_CONFIG/LOG_LEVEL, one log line per request.
+- **Verified:** `pnpm check` (113 tests, stable over 3 runs), `pnpm build`; smoke run of `main.ts` with the example config: health/ready OK,
+  502 for an unreachable upstream, 404 normalized, clean SIGTERM, API key absent from logs. Cross-package `@pulsegate/source` resolution works.
+- **Bug fixed:** destroying an oversized undici body without an error listener crashed the process (found by tests).
+- **Open threads:** `/metrics` and the admin listener not built yet; the mid-stream oversized test accepts either a reset or a truncated body.

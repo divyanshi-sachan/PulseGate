@@ -31,3 +31,5 @@ Accepted ADRs **override** the spec documents where they conflict. Create new on
 | [0024](0024-breaker-failure-classification.md) | Circuit-breaker failure classification and counting | Accepted |
 | [0025](0025-monorepo-tooling.md) | Monorepo tooling and TypeScript module setup | Accepted |
 | [0026](0026-config-schema-defaults.md) | Config schema defaults, bounds and validation behavior | Accepted (review) |
+| [0027](0027-request-ids.md) | The gateway always generates its own request IDs | Accepted |
+| [0028](0028-gateway-implementation-notes.md) | Phase 1 gateway implementation choices | Accepted (review) |

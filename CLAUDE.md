@@ -85,6 +85,8 @@ Each package: `package.json` exporting `"@pulsegate/source": "./src/index.ts"` t
 extending the base, and `src/index.ts` as the only public entry. Relative imports use `.ts` extensions; no enums,
 namespaces or parameter properties (`erasableSyntaxOnly`). Existing: `packages/shared` (error registry),
 `packages/config` (Zod schema + loader; defaults in ADR-0026, documented in `config/routes.example.yaml`).
+`apps/gateway` (Fastify public + operations listeners, RouteRegistry → UpstreamRegistry → ProxyService; ADR-0028).
+Unit tests sit next to code in `src/`; socket-level integration tests with mock upstreams in `apps/gateway/test/`.
 When changing config: update schema, ADR-0026, the example YAML and the defaults test together.
 
 ## Coding conventions
@@ -106,6 +108,7 @@ pnpm lint             # eslint (typescript-eslint strictTypeChecked)
 pnpm typecheck        # tsc --noEmit over the whole repo
 pnpm format           # prettier --write (markdown is excluded)
 pnpm build            # tsc per package → dist (topological)
+pnpm --filter @pulsegate/gateway dev   # run gateway from source (PULSEGATE_CONFIG, LOG_LEVEL)
 docker compose up     # TODO (Phase 1 step 4)
 ```
 
