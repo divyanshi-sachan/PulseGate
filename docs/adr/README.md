@@ -22,3 +22,6 @@ Accepted ADRs **override** the spec documents where they conflict. Create new on
 | [0015](0015-breaker-config-location.md) | Circuit-breaker settings: global default, per-upstream override | Accepted |
 | [0016](0016-retry-config-semantics.md) | `maxAttempts` counts total attempts; optional backoff fields | Accepted |
 | [0017](0017-route-matching-and-forwarding.md) | Route matching and path forwarding rules | Accepted |
+| [0018](0018-client-error-codes.md) | Error codes for oversized and malformed requests | Accepted |
+| [0019](0019-upstream-url-joining.md) | Upstream URL joining and query forwarding | Accepted |
+| [0020](0020-admin-authentication.md) | Admin API on a separate port with a bearer token | Accepted |

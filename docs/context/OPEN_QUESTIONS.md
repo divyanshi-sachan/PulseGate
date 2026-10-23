@@ -21,11 +21,6 @@ with the ADR link. `[blocks: X]` marks the phase or component that can't be fina
 - **Q9 — Rate-limit headers.** `X-RateLimit-Limit/Remaining` vs IETF draft `RateLimit-*`; `Retry-After` on 429?
   *Proposed:* `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset` + `Retry-After` (seconds) on 429.
 
-- **Q10 — Missing error codes & admin auth.** `GatewayErrorCode` lacks payload-too-large (413) and bad-request (400)
-  (`METHOD_NOT_ALLOWED` 405 was added by ADR-0017). Admin auth mechanism is unspecified.
-  *Proposed:* add `PAYLOAD_TOO_LARGE`, `BAD_REQUEST`; admin uses a separate
-  `ADMIN_TOKEN` bearer from env, on a separate port or prefix.
-
 - **Q11 — Half-open → closed threshold.** "After the required successful probes" but only `halfOpenMaxRequests` is configurable.
   *Proposed:* add `halfOpenSuccessThreshold` (default 1, ≤ `halfOpenMaxRequests`).
 
@@ -38,6 +33,18 @@ with the ADR link. `[blocks: X]` marks the phase or component that can't be fina
 - **Q14 — Version reference mismatch.** system_design_specification.md says "Addendum to PRD v1.1"; prd.md is v1.0.
   *Proposed:* treat prd.md as current; fix the header when convenient.
 
+- **Q15 — Which port serves `/health`, `/ready` and `/metrics`?** ADR-0020 moves `/admin/*` to its own port,
+  but the specs list health and metrics separately from admin.
+  *Proposed:* `/health` and `/ready` on both listeners (load balancers probe the public port); `/metrics` on the admin
+  port only, so Prometheus data isn't public. Note: this means `/metrics` would be off whenever `ADMIN_TOKEN` is unset.
+
+- **Q16 — Header forwarding rules.** `[blocks: proxy, Phase 1]` FR-01 needs headers "forwarded according to documented rules",
+  but none are documented. Open points: `Host`, hop-by-hop headers, `X-Forwarded-*`, whether the client's `X-API-Key` reaches the upstream.
+  *Proposed:* strip hop-by-hop headers (`Connection` and the headers it lists, `Keep-Alive`, `TE`, `Trailer`, `Transfer-Encoding`, `Upgrade`,
+  `Proxy-*`) in both directions; **strip the API-key header** before forwarding; set `Host` to the upstream host; add `X-Request-ID`
+  and `X-Forwarded-For/Proto/Host` (appending to an incoming `X-Forwarded-For` only from `trustedProxies`, see Q8); pass all other
+  headers through.
+
 ## Resolved
 
 - **Q1 → [ADR-0013](../adr/0013-routes-reference-upstream-id.md):** routes must use `upstreamId`; URLs live only in top-level `upstreams[]`; inline route URLs unsupported.
@@ -45,3 +52,5 @@ with the ADR link. `[blocks: X]` marks the phase or component that can't be fina
 - **Q4 → [ADR-0015](../adr/0015-breaker-config-location.md):** top-level `circuitBreaker` defaults, field-by-field override per upstream; none on routes.
 - **Q5 → [ADR-0016](../adr/0016-retry-config-semantics.md):** `maxAttempts` = total attempts incl. first; optional `baseDelayMs` 50, `maxDelayMs` 1000, `retryableStatuses` [502,503,504]; connection errors always retryable.
 - **Q7 → [ADR-0017](../adr/0017-route-matching-and-forwarding.md):** segment-aware longest-prefix match then method; 405 `METHOD_NOT_ALLOWED` + `Allow`; prefix preserved unless `stripPrefix: true`; query forwarded verbatim.
+- **Q10 → [ADR-0018](../adr/0018-client-error-codes.md), [ADR-0020](../adr/0020-admin-authentication.md):** 413 `PAYLOAD_TOO_LARGE`, 400 `BAD_REQUEST` (gateway-decided client errors, never upstream failures); admin uses a separate port + `ADMIN_TOKEN` bearer, 401 `ADMIN_AUTHENTICATION_FAILED`.
+- **ADR-0017 follow-up → [ADR-0019](../adr/0019-upstream-url-joining.md):** raw-path joining `basePath + path`, dot segments → 400, `baseUrl` path-only, query forwarded byte-for-byte (bare `?` dropped).
