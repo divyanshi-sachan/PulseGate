@@ -1,0 +1,5 @@
+dist/
+coverage/
+pnpm-lock.yaml
+# Specs and ADRs are hand-formatted markdown
+**/*.md

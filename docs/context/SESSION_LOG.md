@@ -61,3 +61,14 @@ Format: date · goal · what changed · decisions (ADR links) · open threads.
   client aborts don't count, size limit enforced while streaming.
 - **Open threads:** Claude-chosen details to confirm: `failureStatuses` default, CONNECT handling, upstream 101 → 502,
   last error returned when breaker opens mid-retry. Remaining open: Q3, Q6, Q8, Q9, Q11, Q13, Q14, Q17.
+
+## 2026-10-23 · Phase 1: monorepo scaffold
+- **Goal:** set up the pnpm monorepo (TS strict, Vitest, ESLint, Prettier) and the real commands in CLAUDE.md.
+- **Changed:** ADRs 0023–0024 committed (4cb55ec). Added root package.json, pnpm-workspace.yaml, tsconfig.base/json,
+  eslint.config.js, vitest.config.ts, Prettier/EditorConfig files, pnpm-lock.yaml; `packages/shared` (error registry from
+  ADR-0018 + `GatewayError`, 5 tests). Prettier reformatted .claude/settings.json (whitespace only). CLAUDE.md Commands filled in.
+- **Decisions:** [ADR-0025](../adr/0025-monorepo-tooling.md): TS 6.0.3 (not 7, since typescript-eslint supports only <6.1), ESM,
+  `.ts` imports + `erasableSyntaxOnly` + `rewriteRelativeImportExtensions`, `@pulsegate/source` export condition, single root configs.
+- **Verified:** `pnpm check` passes (format, lint, typecheck, 5 tests); `pnpm build` emits dist with `.js` imports;
+  Node 26 runs package source directly. Cross-package source resolution not exercised yet (no consumer package).
+- **Open threads:** next is `packages/config` (Zod schema for ADRs 0013–0024; pick request/response size-limit keys).

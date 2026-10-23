@@ -69,7 +69,7 @@ These come straight from the specs; violating one requires an ADR first.
 - **Scope discipline:** finish proxy → rate limiter → reliability before dashboard or distributed extras.
   Out of scope: K8s operator, service mesh, billing, ML, multi-region, SSO.
 
-## Stack & layout (planned — see technical_implementation.md §3)
+## Stack & layout (see technical_implementation.md §3, ADR-0025)
 
 Node.js + TypeScript, pnpm workspaces, Fastify (typed hooks), Undici, ioredis, Zod (runtime source of
 truth; infer TS types from schemas), Vitest + `fastify.inject`, k6, Docker Compose, React dashboard.
@@ -81,6 +81,9 @@ examples/mock-upstreams  config/routes.example.yaml  tests/{integration,e2e}  be
 ```
 
 Packages expose small public interfaces; the gateway composes interfaces, never imports internals.
+Each package: `package.json` exporting `"@pulsegate/source": "./src/index.ts"` then `dist`, a `tsconfig.build.json`
+extending the base, and `src/index.ts` as the only public entry. Relative imports use `.ts` extensions; no enums,
+namespaces or parameter properties (`erasableSyntaxOnly`). Existing: `packages/shared` (error registry).
 
 ## Coding conventions
 
@@ -90,14 +93,18 @@ Packages expose small public interfaces; the gateway composes interfaces, never 
 - Integration tests use real Redis (test container) and mock upstreams that can delay/reset/5xx.
 - Bound everything: maps, queues, retries, concurrency, body sizes. Enforce size limits while streaming, never by buffering.
 
-## Commands (fill in once scaffolded)
+## Commands
 
-```
-pnpm install      # TODO
-pnpm test         # TODO
-pnpm lint         # TODO
-pnpm typecheck    # TODO
-docker compose up # TODO
+```bash
+pnpm install          # install workspace deps (Node >=24, pnpm 11)
+pnpm check            # format:check + lint + typecheck + test (run before every commit)
+pnpm test             # vitest run (all packages); pnpm test:watch for watch mode
+pnpm vitest run packages/shared   # one package / file filter
+pnpm lint             # eslint (typescript-eslint strictTypeChecked)
+pnpm typecheck        # tsc --noEmit over the whole repo
+pnpm format           # prettier --write (markdown is excluded)
+pnpm build            # tsc per package → dist (topological)
+docker compose up     # TODO (Phase 1 step 4)
 ```
 
 ## Project slash commands
