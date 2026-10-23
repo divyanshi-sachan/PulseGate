@@ -43,7 +43,7 @@ These come straight from the specs; violating one requires an ADR first.
   circuit-breaker check → upstream (timeout + retry inside) → cache write → observation.
   Cache hits must never bypass rate limiting. Every exit path records metrics and cleans up.
 - **Hot path never touches PostgreSQL.** Redis is optional in single-instance mode.
-- **Retries:** bounded attempts, exponential backoff **with jitter**, never exceed the request deadline,
+- **Retries:** bounded attempts (`maxAttempts` = total incl. first, ADR-0016), exponential backoff **with jitter**, never exceed the request deadline,
   **no automatic retry of non-idempotent methods** unless an explicit idempotency mechanism is configured.
 - **Circuit breaker:** one per upstream, in-memory per instance (MVP). States CLOSED/OPEN/HALF_OPEN,
   bounded half-open probes, transitions centralized, logged and metered. Ordinary 4xx ≠ upstream failure.
@@ -55,7 +55,7 @@ These come straight from the specs; violating one requires an ADR first.
   upstreams only from validated config — routes reference them by `upstreamId` (ADR-0013), `baseUrl` http/https only, never from requests (SSRF); request/response size limits;
   secrets only via env (`.env.example` is committed, `.env` never is).
 - **Errors:** typed `GatewayErrorCode` + HTTP status + `requestId` in one normalized JSON shape;
-  no stack traces to clients. 404 route / 401 auth / 429 limit / 503 circuit open / 504 timeout / 502 conn failure.
+  no stack traces to clients. 404 route / 405 method (ADR-0017) / 401 auth / 429 limit / 503 circuit open / 504 timeout / 502 conn failure.
 - **Metrics:** bounded label cardinality only (route id, status class, outcome, cache result).
   Never request IDs, keys, or raw URLs as labels.
 - **Benchmarks:** never publish or write a number that wasn't measured. Record hardware, versions, config, workload.

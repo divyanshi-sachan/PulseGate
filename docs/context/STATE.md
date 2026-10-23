@@ -9,17 +9,18 @@ technical_implementation.md). No code yet. Claude agentic setup (hooks, ADRs, co
 ## Done
 - Product, system-design and implementation specs written.
 - ADRs 0001–0012 seeded from decisions already stated in the specs.
-- ADR-0013: routes reference upstreams by `upstreamId` (Q1 resolved).
+- Config schema decisions settled: ADR-0013 (upstreamId, Q1), 0014 (auth shape, Q2), 0015 (breaker config, Q4),
+  0016 (retry semantics, Q5), 0017 (route matching/forwarding, Q7). Phase 1 is unblocked.
 - Spec gaps/conflicts catalogued in OPEN_QUESTIONS.md.
 
 ## Next up (Phase 1 — Gateway foundation, technical_implementation.md §14)
-1. Resolve remaining blocking open questions for config schema: Q2, Q4, Q5, Q7 (Q7 must precede the proxy).
-2. Scaffold pnpm monorepo (TS strict, Vitest, ESLint, Prettier) and fill in commands in CLAUDE.md.
-3. `packages/config`: Zod schema + loader with actionable validation errors, incl. ADR-0013 upstream rules.
-4. `apps/gateway`: Fastify server, route registry (prefix + method) → UpstreamRegistry → ProxyService via Undici, request IDs, structured logs.
-5. `examples/mock-upstreams` + Docker Compose dev environment.
+1. Scaffold pnpm monorepo (TS strict, Vitest, ESLint, Prettier) and fill in commands in CLAUDE.md.
+2. `packages/config`: Zod schema + loader with actionable validation errors, implementing ADRs 0013–0017.
+3. `apps/gateway`: Fastify server, route registry (segment-aware longest prefix + method, ADR-0017) → UpstreamRegistry → ProxyService via Undici, request IDs, structured logs.
+4. `examples/mock-upstreams` + Docker Compose dev environment.
 
 Exit criteria: a client can call a configured route and receive the correct upstream response.
 
 ## Blockers / risks
-- None. (`backend/` now has its own git repo on `main`.)
+- None for Phase 1. Later phases still need Q3, Q6, Q8–Q12 (see OPEN_QUESTIONS.md).
+- Repo: `backend/` has its own git repo on `main` (no remote yet).

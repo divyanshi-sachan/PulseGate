@@ -18,3 +18,7 @@ Accepted ADRs **override** the spec documents where they conflict. Create new on
 | [0011](0011-normalized-errors.md) | Typed, normalized gateway errors | Accepted |
 | [0012](0012-defer-shared-state.md) | Defer shared caching and distributed breaker state | Accepted (deferral) |
 | [0013](0013-routes-reference-upstream-id.md) | Routes reference upstreams by `upstreamId` | Accepted |
+| [0014](0014-auth-config-shape.md) | Route auth is a nested `auth: { required }` object | Accepted |
+| [0015](0015-breaker-config-location.md) | Circuit-breaker settings: global default, per-upstream override | Accepted |
+| [0016](0016-retry-config-semantics.md) | `maxAttempts` counts total attempts; optional backoff fields | Accepted |
+| [0017](0017-route-matching-and-forwarding.md) | Route matching and path forwarding rules | Accepted |

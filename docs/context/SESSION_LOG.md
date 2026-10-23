@@ -20,3 +20,13 @@ Format: date · goal · what changed · decisions (ADR links) · open threads.
 - **Decisions:** [ADR-0013](../adr/0013-routes-reference-upstream-id.md): mandatory `upstreamId`, URLs only in top-level
   `upstreams[]`, http/https only, unique ids, unknown ids fail startup, shared upstream = shared breaker.
 - **Open threads:** Q2, Q4, Q5, Q7 still block the config schema; route matching must handle same prefix + different methods.
+
+## 2026-10-23 · Decide Q2, Q4, Q5, Q7: rest of the config schema
+- **Goal:** unblock Phase 1 by settling the remaining config-schema questions (all recommended options chosen).
+- **Changed:** ADR-0013 committed (71f3b2a). Added ADRs 0014–0017; updated ADR index, OPEN_QUESTIONS (four moved to Resolved,
+  Q10 narrowed), CLAUDE.md invariants (405, maxAttempts meaning), STATE next steps.
+- **Decisions:** [0014](../adr/0014-auth-config-shape.md) nested `auth: { required }`;
+  [0015](../adr/0015-breaker-config-location.md) global `circuitBreaker` defaults + per-upstream override;
+  [0016](../adr/0016-retry-config-semantics.md) `maxAttempts` = total attempts, optional backoff fields;
+  [0017](../adr/0017-route-matching-and-forwarding.md) segment-aware longest-prefix + method, 405 + `Allow`, preserve prefix, verbatim query.
+- **Open threads:** Phase 1 unblocked; next is the monorepo scaffold. Q3, Q6, Q8–Q14 remain for later phases.
