@@ -10,6 +10,8 @@ export interface LocalLimiterOptions {
 
 export interface LocalLimiterStats {
   buckets: number;
+  /** The configured cap; `buckets` never exceeds it. */
+  maxBuckets: number;
   /** Full buckets removed by sweep(); lossless. */
   sweptFull: number;
   /** Buckets evicted at the cap; each briefly resets one caller's budget. */
@@ -71,6 +73,7 @@ export class LocalTokenBucketLimiter implements RateLimiter {
   stats(): LocalLimiterStats {
     return {
       buckets: this.#buckets.size,
+      maxBuckets: this.#maxBuckets,
       sweptFull: this.#sweptFull,
       evictedLru: this.#evictedLru,
     };

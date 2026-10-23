@@ -82,7 +82,12 @@ describe('LocalTokenBucketLimiter (ADR-0004, ADR-0032)', () => {
     for (let i = 0; i < 3; i++) limiter.consumeSync('drained', policy);
     clock.advance(1000);
     expect(limiter.sweep()).toBe(1);
-    expect(limiter.stats()).toEqual({ buckets: 1, sweptFull: 1, evictedLru: 0 });
+    expect(limiter.stats()).toEqual({
+      buckets: 1,
+      maxBuckets: 100_000,
+      sweptFull: 1,
+      evictedLru: 0,
+    });
     // The drained bucket kept its state: 1 token refilled, not reset to full.
     expect(limiter.consumeSync('drained', policy)).toMatchObject({ allowed: true, remaining: 0 });
   });
@@ -93,9 +98,46 @@ describe('LocalTokenBucketLimiter (ADR-0004, ADR-0032)', () => {
     limiter.consumeSync('b', policy);
     limiter.consumeSync('a', policy); // a is now most recent
     limiter.consumeSync('c', policy); // evicts b
-    expect(limiter.stats()).toEqual({ buckets: 2, sweptFull: 0, evictedLru: 1 });
+    expect(limiter.stats()).toEqual({ buckets: 2, maxBuckets: 2, sweptFull: 0, evictedLru: 1 });
     // a kept its state (two tokens used); b starts over as a new, full bucket.
     expect(limiter.consumeSync('a', policy).remaining).toBe(0);
     expect(limiter.consumeSync('b', policy).remaining).toBe(2);
+  });
+});
+
+describe('LocalTokenBucketLimiter under key pressure (ADR-0032)', () => {
+  it('never holds more than maxBuckets while 100,000 distinct keys arrive', () => {
+    const limiter = new LocalTokenBucketLimiter({ now: fakeClock().now, maxBuckets: 1000 });
+    let peak = 0;
+    for (let i = 0; i < 100_000; i++) {
+      limiter.consumeSync(`ip:${String(i)}`, policy);
+      peak = Math.max(peak, limiter.stats().buckets);
+    }
+    expect(peak).toBe(1000);
+    expect(limiter.stats()).toEqual({
+      buckets: 1000,
+      maxBuckets: 1000,
+      sweptFull: 0,
+      evictedLru: 99_000,
+    });
+  });
+
+  it('keeps recently active callers and evicts the idle ones', () => {
+    const limiter = new LocalTokenBucketLimiter({ now: fakeClock().now, maxBuckets: 3 });
+    for (let i = 0; i < 3; i++) limiter.consumeSync('active', policy); // drains "active"
+    for (let i = 0; i < 10; i++) {
+      limiter.consumeSync(`spray:${String(i)}`, policy);
+      limiter.consumeSync('active', policy); // stays most recent, so never evicted
+    }
+    expect(limiter.consumeSync('active', policy).allowed).toBe(false);
+  });
+
+  it('frees space losslessly once sprayed buckets refill', () => {
+    const clock = fakeClock();
+    const limiter = new LocalTokenBucketLimiter({ now: clock.now, maxBuckets: 100 });
+    for (let i = 0; i < 100; i++) limiter.consumeSync(`ip:${String(i)}`, policy);
+    clock.advance(1000); // one token back: every bucket is full again
+    expect(limiter.sweep()).toBe(100);
+    expect(limiter.stats()).toMatchObject({ buckets: 0, sweptFull: 100, evictedLru: 0 });
   });
 });

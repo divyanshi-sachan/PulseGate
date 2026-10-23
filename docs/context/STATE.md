@@ -23,7 +23,7 @@ middleware** (timeouts already exist; add bounded retries, per-upstream circuit 
 - `examples/mock-upstreams` (8 tests), Dockerfile, docker-compose.yml, README quickstart (ADR-0029, accepted after review).
 - Bounded graceful shutdown + readiness scope (ADR-0030); false mid-stream warning fixed. `pnpm check`: 129 tests.
 - Phase 2: clients file + `pnpm keygen` (ADR-0031), `ApiKeyAuthenticator`, `packages/rate-limiter` with
-  `LocalTokenBucketLimiter`, rate-limit headers and 429 (ADR-0032). `pnpm check`: 170 tests.
+  `LocalTokenBucketLimiter`, rate-limit headers and 429 (ADR-0032); review hardening tests added. `pnpm check`: 183 tests.
 
 ## Next up (Phase 3 — Reliability middleware, technical_implementation.md §14)
 0. Review the Claude-chosen ADRs: 0026 (config defaults), 0028 (gateway choices).

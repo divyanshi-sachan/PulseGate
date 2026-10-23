@@ -47,6 +47,12 @@ clients:
   (and a 403 code) are deferred to their own ADR.
 
 ## Consequences
+- **Review checks (2026-10-23):**
+  - **Rotation:** two keys of one client work side by side.
+  - **Revocation:** after removing one key and restarting, the removed key gets 401 and the other still works.
+  - **Expiry:** an expired key gets 401 (logged as `expired`) while the same client's live key works.
+  - **Disabling:** `enabled: false` revokes every key of the client.
+  - Covered both as unit tests and end to end over sockets.
 - `clientId` becomes the rate-limit identity on authenticated routes (ADR-0032) and appears in request logs.
 - Tests: valid key; each failure reason gives the identical 401; expiry at the boundary; disabled client; rotation with two
   live keys; schema rejects raw keys, duplicate ids and duplicate digests; startup fails when auth is needed and the file is missing.

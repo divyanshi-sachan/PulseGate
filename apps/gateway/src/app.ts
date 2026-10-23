@@ -35,6 +35,8 @@ export interface GatewayOptions {
   clients?: ClientsConfig;
   /** Rate limiter override, e.g. a limiter with a fake clock in tests (default: local, ADR-0032). */
   limiter?: RateLimiter;
+  /** Local-limiter sweep interval (default 60 s); shorter in tests. */
+  sweepIntervalMs?: number;
 }
 
 export interface Gateway {
@@ -304,19 +306,19 @@ export function createGateway(config: GatewayConfig, options: GatewayOptions = {
     limiter instanceof LocalTokenBucketLimiter
       ? setInterval(() => {
           limiter.sweep();
-          const { evictedLru, buckets } = limiter.stats();
+          const { evictedLru, buckets, maxBuckets } = limiter.stats();
           if (evictedLru > lastLruEvictions) {
             publicServer.log.warn(
               {
                 evicted: evictedLru - lastLruEvictions,
                 buckets,
-                maxBuckets: config.rateLimit.maxBuckets,
+                maxBuckets,
               },
               'rate-limit bucket cap reached; least-recently-used buckets were evicted',
             );
             lastLruEvictions = evictedLru;
           }
-        }, SWEEP_INTERVAL_MS).unref()
+        }, options.sweepIntervalMs ?? SWEEP_INTERVAL_MS).unref()
       : undefined;
   const operations = buildOperationsServer(options, () => ready);
   let closing: Promise<ShutdownResult> | undefined;

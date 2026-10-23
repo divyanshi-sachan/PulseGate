@@ -84,3 +84,26 @@ describe('ApiKeyAuthenticator (ADR-0031)', () => {
     expect(new Set(bodies.map((body) => JSON.stringify(body))).size).toBe(1);
   });
 });
+
+describe('revocation and expiry are per key (ADR-0031)', () => {
+  it("removing one key (revocation on restart) leaves the client's other key working", () => {
+    const afterRevocation = parseClients({
+      clients: [{ id: 'mobile', keys: [{ id: 'next', sha256: hashApiKey(rotated) }] }],
+    });
+    const auth = new ApiKeyAuthenticator(afterRevocation);
+    expect(reasonOf(auth, live)).toBe('unknown');
+    expect(auth.authenticate(rotated)).toEqual({ clientId: 'mobile', keyId: 'next' });
+  });
+
+  it("an expired key does not affect the same client's live keys", () => {
+    const auth = new ApiKeyAuthenticator(clients, { now: () => EXPIRY + 1 });
+    expect(reasonOf(auth, expiring)).toBe('expired');
+    expect(auth.authenticate(live)).toEqual({ clientId: 'mobile', keyId: 'current' });
+    expect(auth.authenticate(rotated)).toEqual({ clientId: 'mobile', keyId: 'next' });
+  });
+
+  it('disabling a client revokes all of its keys', () => {
+    const auth = new ApiKeyAuthenticator(clients);
+    expect(reasonOf(auth, disabled)).toBe('disabled');
+  });
+});

@@ -134,3 +134,11 @@ Format: date · goal · what changed · decisions (ADR links) · open threads.
   example with a public demo key, Compose mounts it, Dockerfile copies the new manifest; README, CLAUDE.md, ADR-0026.
 - **Verified:** `pnpm check` (170 tests); mutation checks (shared bucket, no-429) fail the new tests; Docker: 200/401/401, per-IP public
   route, exactly 20/22 POSTs allowed with Retry-After 2, no key or digest in logs, failure reasons logged.
+
+## 2026-10-23 · Phase 2 review checks
+- **Goal:** add the user's four checks: key rotation/revocation/expiry, trusted-proxy spoofing, eviction under pressure, header consistency.
+- **Changed:** `LocalLimiterStats.maxBuckets`; `GatewayOptions.sweepIntervalMs` (test hook); eviction log reports the limiter's own cap;
+  new `apps/gateway/test/phase2-hardening.test.ts`; per-key revocation unit tests; limiter pressure tests; ADR-0031/0032 updated
+  with an explicit header table.
+- **Decisions:** rate-limit headers appear exactly when a bucket was consulted, so not on 401/400/404/405 (documented in ADR-0032).
+- **Verified:** `pnpm check` (183 tests); three mutations (trust any XFF, no cap, headers on success only) each fail the suite.
