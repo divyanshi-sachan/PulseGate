@@ -16,7 +16,8 @@ with the ADR link. `[blocks: X]` marks the phase or component that can't be fina
   (`scope: "client"`), with an explicit opt-in `scope: "shared"` for public data. `Authorization` header still bypasses.
 
 - **Q8 — Rate-limit key on routes with `auth.required: false`.** No client identity exists.
-  *Proposed:* key by client IP, only honoring `X-Forwarded-For` when a `trustedProxies` list is configured.
+  *Proposed:* key by client IP. ADR-0021 already defines how the client IP is derived (`server.trustedProxies`),
+  so only the keying choice itself is open.
 
 - **Q9 — Rate-limit headers.** `X-RateLimit-Limit/Remaining` vs IETF draft `RateLimit-*`; `Retry-After` on 429?
   *Proposed:* `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset` + `Retry-After` (seconds) on 429.
@@ -33,17 +34,9 @@ with the ADR link. `[blocks: X]` marks the phase or component that can't be fina
 - **Q14 — Version reference mismatch.** system_design_specification.md says "Addendum to PRD v1.1"; prd.md is v1.0.
   *Proposed:* treat prd.md as current; fix the header when convenient.
 
-- **Q15 — Which port serves `/health`, `/ready` and `/metrics`?** ADR-0020 moves `/admin/*` to its own port,
-  but the specs list health and metrics separately from admin.
-  *Proposed:* `/health` and `/ready` on both listeners (load balancers probe the public port); `/metrics` on the admin
-  port only, so Prometheus data isn't public. Note: this means `/metrics` would be off whenever `ADMIN_TOKEN` is unset.
-
-- **Q16 — Header forwarding rules.** `[blocks: proxy, Phase 1]` FR-01 needs headers "forwarded according to documented rules",
-  but none are documented. Open points: `Host`, hop-by-hop headers, `X-Forwarded-*`, whether the client's `X-API-Key` reaches the upstream.
-  *Proposed:* strip hop-by-hop headers (`Connection` and the headers it lists, `Keep-Alive`, `TE`, `Trailer`, `Transfer-Encoding`, `Upgrade`,
-  `Proxy-*`) in both directions; **strip the API-key header** before forwarding; set `Host` to the upstream host; add `X-Request-ID`
-  and `X-Forwarded-For/Proto/Host` (appending to an incoming `X-Forwarded-For` only from `trustedProxies`, see Q8); pass all other
-  headers through.
+- **Q17 — `X-Request-ID` handling.** Should the gateway accept a client-supplied `X-Request-ID`, and does it forward its
+  ID to upstreams? *Proposed:* always generate its own ID (ignore the incoming value, or log it as `clientRequestId` only after
+  validating length/charset), send it upstream as `X-Request-ID`, and return it in the response.
 
 ## Resolved
 
@@ -54,3 +47,5 @@ with the ADR link. `[blocks: X]` marks the phase or component that can't be fina
 - **Q7 → [ADR-0017](../adr/0017-route-matching-and-forwarding.md):** segment-aware longest-prefix match then method; 405 `METHOD_NOT_ALLOWED` + `Allow`; prefix preserved unless `stripPrefix: true`; query forwarded verbatim.
 - **Q10 → [ADR-0018](../adr/0018-client-error-codes.md), [ADR-0020](../adr/0020-admin-authentication.md):** 413 `PAYLOAD_TOO_LARGE`, 400 `BAD_REQUEST` (gateway-decided client errors, never upstream failures); admin uses a separate port + `ADMIN_TOKEN` bearer, 401 `ADMIN_AUTHENTICATION_FAILED`.
 - **ADR-0017 follow-up → [ADR-0019](../adr/0019-upstream-url-joining.md):** raw-path joining `basePath + path`, dot segments → 400, `baseUrl` path-only, query forwarded byte-for-byte (bare `?` dropped).
+- **Q16 → [ADR-0021](../adr/0021-header-forwarding.md):** strip hop-by-hop (both directions) and `X-API-Key`; `Authorization` only via `forwarding.authorization`; rebuild `X-Forwarded-*` from `server.trustedProxies`.
+- **Q15 → [ADR-0022](../adr/0022-operations-listener.md):** operations listener on 9091 bound to 127.0.0.1 serves `/health`, `/ready`, `/metrics`, independent of admin.

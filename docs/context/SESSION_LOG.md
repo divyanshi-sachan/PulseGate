@@ -41,3 +41,12 @@ Format: date · goal · what changed · decisions (ADR links) · open threads.
   with `ADMIN_TOKEN` bearer, disabled when unset, 401 `ADMIN_AUTHENTICATION_FAILED`.
 - **Open threads:** Q16 (header forwarding, incl. stripping `X-API-Key`) now blocks the proxy; Q15 (health/metrics port) is needed
   before wiring listeners. Request-size limit key/default to be chosen with the config schema.
+
+## 2026-10-23 · Q15/Q16: header forwarding, operations listener
+- **Goal:** record the user's final decisions on header forwarding and health/metrics ports, plus the oversized-response error.
+- **Changed:** ADRs 0018–0020 committed (f3fea23). Amended ADR-0018; added ADRs 0021–0022; updated ADR index,
+  OPEN_QUESTIONS (Q15, Q16 resolved; Q8 narrowed; new Q17), CLAUDE.md invariants (headers, listeners, 502 code), STATE.
+- **Decisions:** [0018](../adr/0018-client-error-codes.md) amended: 502 `UPSTREAM_RESPONSE_TOO_LARGE` (abort if mid-stream; cache limit = bypass only);
+  [0021](../adr/0021-header-forwarding.md) strip hop-by-hop + `X-API-Key`, `Authorization` opt-in via `forwarding.authorization`,
+  `X-Forwarded-*` rebuilt from `server.trustedProxies`; [0022](../adr/0022-operations-listener.md) ops listener 9091 on 127.0.0.1, always on.
+- **Open threads:** Phase 1 fully unblocked. Config names `forwarding.{authorization,forwardedHost}` were chosen by Claude. Q17 (request-ID handling) is new.

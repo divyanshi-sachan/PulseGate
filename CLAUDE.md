@@ -52,12 +52,16 @@ These come straight from the specs; violating one requires an ADR first.
 - **Caching:** conservative by default — GET + success only, TTL + size + entry bounds, respect
   `private`/`no-store`, never cache personalized data under a shared key, no credentials in keys.
 - **Security:** never log/label/cache raw API keys or auth headers; admin on its own port with an `ADMIN_TOKEN` bearer (ADR-0020);
-  upstreams only from validated config — routes reference them by `upstreamId` (ADR-0013), `baseUrl` http/https and path-only, never from requests (SSRF); raw-path forwarding with dot segments rejected (ADR-0019); request/response size limits;
+  upstreams only from validated config — routes reference them by `upstreamId` (ADR-0013), `baseUrl` http/https and path-only, never from requests (SSRF); raw-path forwarding with dot segments rejected (ADR-0019);
+  strip hop-by-hop headers and `X-API-Key` before forwarding, `Authorization` only on opt-in, `X-Forwarded-*` only from
+  `server.trustedProxies` (ADR-0021); request/response size limits;
   secrets only via env (`.env.example` is committed, `.env` never is).
 - **Errors:** typed `GatewayErrorCode` + HTTP status + `requestId` in one normalized JSON shape;
   no stack traces to clients. Full registry in ADR-0018: 400 malformed / 401 auth / 404 route / 405 method /
-  413 body too large / 429 limit / 502 conn failure / 503 circuit open / 504 timeout / 500 internal.
+  413 body too large / 429 limit / 502 conn failure or `UPSTREAM_RESPONSE_TOO_LARGE` / 503 circuit open / 504 timeout / 500 internal.
   Gateway-decided 4xx never count as upstream failures.
+- **Listeners (ADR-0020, 0022):** public 8080 = proxy only; admin 9090 = `/admin/*`; operations 9091 on 127.0.0.1 =
+  `/health`, `/ready`, `/metrics`. Nothing operational or administrative on the public port.
 - **Metrics:** bounded label cardinality only (route id, status class, outcome, cache result).
   Never request IDs, keys, or raw URLs as labels.
 - **Benchmarks:** never publish or write a number that wasn't measured. Record hardware, versions, config, workload.
