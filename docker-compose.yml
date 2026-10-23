@@ -1,0 +1,70 @@
+# Local development stack (ADR-0029): gateway + two mock upstreams.
+#   docker compose up --build
+#   curl -i http://localhost:8080/api/orders/1
+# Uses config/routes.example.yaml as-is: its upstream hosts match the service names below.
+name: pulsegate
+
+x-mock-healthcheck: &mock-healthcheck
+  interval: 5s
+  timeout: 3s
+  retries: 10
+
+services:
+  gateway:
+    build:
+      context: .
+      target: gateway
+    environment:
+      PULSEGATE_CONFIG: /config/routes.yaml
+      LOG_LEVEL: info
+    volumes:
+      - ./config/routes.example.yaml:/config/routes.yaml:ro
+    ports:
+      # Only the public listener is published. The operations listener (9091) stays on
+      # 127.0.0.1 inside the container and is probed by the healthcheck below (ADR-0022).
+      - '8080:8080'
+    depends_on:
+      orders-mock:
+        condition: service_healthy
+      payments-mock:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:9091/ready').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    stop_grace_period: 15s
+
+  orders-mock:
+    build:
+      context: .
+      target: mock-upstreams
+    environment:
+      SERVICE_NAME: orders
+      PORT: '4001'
+    healthcheck:
+      <<: *mock-healthcheck
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:4001/healthz').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+
+  payments-mock:
+    build:
+      context: .
+      target: mock-upstreams
+    environment:
+      SERVICE_NAME: payments
+      PORT: '4002'
+    healthcheck:
+      <<: *mock-healthcheck
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:4002/healthz').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"

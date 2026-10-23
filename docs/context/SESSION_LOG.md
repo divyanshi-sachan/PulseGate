@@ -100,3 +100,25 @@ Format: date · goal · what changed · decisions (ADR links) · open threads.
   502 for an unreachable upstream, 404 normalized, clean SIGTERM, API key absent from logs. Cross-package `@pulsegate/source` resolution works.
 - **Bug fixed:** destroying an oversized undici body without an error listener crashed the process (found by tests).
 - **Open threads:** `/metrics` and the admin listener not built yet; the mid-stream oversized test accepts either a reset or a truncated body.
+
+## 2026-10-23 · Phase 1 complete: mock upstreams + Docker Compose
+- **Goal:** finish Phase 1 with mock upstream services and a Docker Compose dev environment.
+- **Changed:** user committed apps/gateway. Added `examples/mock-upstreams` (fault injection via `_` query params, 8 tests), multi-stage
+  `Dockerfile`, `.dockerignore`, `docker-compose.yml`, `pnpm dev:up/dev:down`, README quickstart; ADR-0029; ADR-0022 amended; CLAUDE.md, STATE.
+- **Decisions:** [ADR-0029](../adr/0029-dev-environment.md) (Claude, pending review): node:26.4.0-slim, pnpm via npm (no corepack in Node 25+),
+  `pnpm deploy --legacy` bundles, non-root runtime, Compose mounts the example config unchanged, ops listener stays on 127.0.0.1.
+- **Verified:** `pnpm check` (121 tests); `docker compose up --wait` → all healthy; curl through the gateway: 200 forwarding with
+  key/auth stripped and XFF rebuilt, 404/405/400, 503 pass-through, 504 timeout, 502 reset, 502 oversized, mid-stream cut-off, 400 upgrade;
+  9091 unreachable from host; no secrets or query strings in logs; clean SIGTERM. Stack torn down afterwards.
+- **Open threads:** Phase 2 needs an API-client/key config design first. Images ~400 MB (slim later). Q3, Q6, Q8, Q9, Q11, Q13, Q14 open.
+
+## 2026-10-23 · ADR-0029 review follow-ups: shutdown, readiness, verification
+- **Goal:** address the user's four verification points before accepting ADR-0029.
+- **Changed:** `server.shutdownTimeoutMs` (schema, example, defaults test); `Gateway.close()` now bounded + idempotent, returns `{ forced }`;
+  `UpstreamRegistry.destroy()`; lifecycle tests; stricter chunked oversize test + in-limit chunked test; log-capture harness + tests.
+  ADR-0030; ADR-0029 → Accepted; ADR-0026/0028 updated; CLAUDE.md hazards.
+- **Verified:** (1) Node 26.4.0 + pnpm 11.9.0 + frozen lockfile in the build stage; (2) mocks healthy before the gateway starts, `/ready` scope
+  documented (upstreams excluded on purpose); (3) Content-Length and chunked oversize paths tested; (4) Docker SIGTERM drain (200, ~2 s)
+  and forced close at the 2 s deadline (exit 0). `pnpm check`: 129 tests.
+- **Bug fixed:** every successful response logged a false "aborted mid-stream" warning (pipeline passes `undefined`, not `null`).
+- **Unexplained:** one Docker run was SIGKILLed after 1.2 s; not reproducible with an explicit `-t 10` or under Compose. Recorded in ADR-0030.

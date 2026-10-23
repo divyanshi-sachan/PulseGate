@@ -132,6 +132,8 @@ const serverSchema = z
         maxResponseBodyBytes: positiveInt.default(10_485_760),
       })
       .prefault({}),
+    /** Drain deadline on SIGTERM before remaining connections are force-closed (ADR-0030). */
+    shutdownTimeoutMs: z.int().min(0).max(120_000).default(10_000),
   })
   .prefault({});
 

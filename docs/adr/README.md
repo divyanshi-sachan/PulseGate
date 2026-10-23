@@ -33,3 +33,5 @@ Accepted ADRs **override** the spec documents where they conflict. Create new on
 | [0026](0026-config-schema-defaults.md) | Config schema defaults, bounds and validation behavior | Accepted (review) |
 | [0027](0027-request-ids.md) | The gateway always generates its own request IDs | Accepted |
 | [0028](0028-gateway-implementation-notes.md) | Phase 1 gateway implementation choices | Accepted (review) |
+| [0029](0029-dev-environment.md) | Mock upstreams and Docker Compose dev environment | Accepted |
+| [0030](0030-shutdown-and-readiness.md) | Bounded graceful shutdown and readiness scope | Accepted |

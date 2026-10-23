@@ -51,6 +51,8 @@ importers:
         specifier: 8.12.3
         version: 8.12.3
 
+  examples/mock-upstreams: {}
+
   packages/config:
     dependencies:
       yaml:

@@ -18,7 +18,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test",
-    "clean": "pnpm -r exec rm -rf dist"
+    "clean": "pnpm -r exec rm -rf dist",
+    "dev:up": "docker compose up --build",
+    "dev:down": "docker compose down"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

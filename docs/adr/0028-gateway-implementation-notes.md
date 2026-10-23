@@ -27,7 +27,7 @@ are exported and unit-tested on their own.
 
 ### Listeners and process
 - Public and operations listeners as in ADR-0022. `/ready` returns 503 until `start()` finishes and again once
-  `close()` begins. **Not built yet:** `/metrics` (Phase 5) and the admin listener (needs admin endpoints; ADR-0020).
+  `close()` begins. Shutdown is bounded by `server.shutdownTimeoutMs` (ADR-0030). **Not built yet:** `/metrics` (Phase 5) and the admin listener (needs admin endpoints; ADR-0020).
 - `main.ts`: config path from **`PULSEGATE_CONFIG`** (default `config/routes.yaml`), log level from **`LOG_LEVEL`**
   (default `info`). A `ConfigError` prints its message and exits 1. SIGTERM/SIGINT drain the public listener,
   close the upstream pools, then the operations listener.
@@ -40,3 +40,8 @@ are exported and unit-tested on their own.
   Phase 5 can hook into the same place.
 - Bug found while testing: destroying an undici response body without an `error` listener throws an uncaught
   `AbortError`, which would crash the process. It is now guarded, and a test covers it.
+- Second bug, found while verifying ADR-0029: Node's `stream.pipeline` callback gets `undefined` on success, but
+  `@types/node` types it `Error | null`. An `!== null` check made **every successful response** log a false
+  `response aborted mid-stream` warning. The fix is an `instanceof Error` check, and a log-capture test fails if a
+  successful request logs anything other than one `request completed` line. Lesson: integration tests that run with
+  the logger off can't see logging bugs.

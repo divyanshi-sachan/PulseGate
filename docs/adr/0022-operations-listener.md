@@ -34,5 +34,6 @@ PulseGate runs up to three listeners:
 - In Docker, `127.0.0.1` inside a container is unreachable from other containers. The Compose setup overrides the
   bind to `0.0.0.0` on an internal network and does **not** publish 9091 to the host by default; container
   healthchecks run inside the container.
+- *Amended by ADR-0029:* the `0.0.0.0` override is deferred until an outside scraper needs it; Compose keeps `127.0.0.1`.
 - Tests: all three endpoints on 9091; 404 on 8080; ops stays up with admin disabled; `/health` stays OK while
   `/ready` fails when required Redis is down; no `/admin/*` on 9091.

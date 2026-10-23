@@ -10,6 +10,7 @@ server: # public gateway listener: proxied traffic only
   limits:
     maxRequestBodyBytes: 1048576 # default 1 MiB, larger bodies get 413 (ADR-0018)
     maxResponseBodyBytes: 10485760 # default 10 MiB, larger responses get 502 (ADR-0018)
+  shutdownTimeoutMs: 10000 # default; drain time on SIGTERM before connections are force-closed (ADR-0030)
 
 admin: # /admin/*, only started when ADMIN_TOKEN is set (ADR-0020)
   host: '127.0.0.1' # default

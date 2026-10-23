@@ -87,6 +87,8 @@ namespaces or parameter properties (`erasableSyntaxOnly`). Existing: `packages/s
 `packages/config` (Zod schema + loader; defaults in ADR-0026, documented in `config/routes.example.yaml`).
 `apps/gateway` (Fastify public + operations listeners, RouteRegistry → UpstreamRegistry → ProxyService; ADR-0028).
 Unit tests sit next to code in `src/`; socket-level integration tests with mock upstreams in `apps/gateway/test/`.
+`examples/mock-upstreams` (dev/demo upstream with `_delay`/`_status`/`_reset`/`_bytes`/`_failRate` query faults).
+Docker: one multi-stage `Dockerfile` (targets `gateway`, `mock-upstreams`); Compose mounts `config/routes.example.yaml`.
 When changing config: update schema, ADR-0026, the example YAML and the defaults test together.
 
 ## Coding conventions
@@ -96,6 +98,10 @@ When changing config: update schema, ADR-0026, the example YAML and the defaults
 - Every component ships with unit tests covering its failure behavior (see system_design §15 table).
 - Integration tests use real Redis (test container) and mock upstreams that can delay/reset/5xx.
 - Bound everything: maps, queues, retries, concurrency, body sizes. Enforce size limits while streaming, never by buffering.
+- **Never run `pnpm deploy` in the local checkout.** It turns `node_modules` into a production install and later
+  `pnpm` scripts abort silently (ADR-0029). Fix: `pnpm install --config.confirmModulesPurge=false`.
+- Don't trust `@types/node` nullability for stream callbacks (`pipeline` passes `undefined` on success); use
+  `instanceof Error`. Assert on real log output (`captureLogs()` in the gateway test harness) when logging matters.
 
 ## Commands
 
@@ -109,7 +115,8 @@ pnpm typecheck        # tsc --noEmit over the whole repo
 pnpm format           # prettier --write (markdown is excluded)
 pnpm build            # tsc per package → dist (topological)
 pnpm --filter @pulsegate/gateway dev   # run gateway from source (PULSEGATE_CONFIG, LOG_LEVEL)
-docker compose up     # TODO (Phase 1 step 4)
+pnpm dev:up           # docker compose up --build: gateway :8080 + orders/payments mocks (ADR-0029)
+pnpm dev:down         # docker compose down
 ```
 
 ## Git workflow

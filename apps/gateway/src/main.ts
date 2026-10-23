@@ -21,7 +21,10 @@ for (const signal of ['SIGTERM', 'SIGINT'] as const) {
   process.once(signal, () => {
     gateway.public.log.info({ signal }, 'shutting down');
     gateway.close().then(
-      () => process.exit(0),
+      ({ forced }) => {
+        gateway.public.log.info({ forced }, 'shutdown complete');
+        process.exit(0);
+      },
       (error: unknown) => {
         gateway.public.log.error({ err: error }, 'shutdown failed');
         process.exit(1);

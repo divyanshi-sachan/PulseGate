@@ -56,6 +56,7 @@ describe('defaults', () => {
       port: 8080,
       trustedProxies: [],
       limits: { maxRequestBodyBytes: 1_048_576, maxResponseBodyBytes: 10_485_760 },
+      shutdownTimeoutMs: 10_000,
     });
     expect(config.admin).toEqual({ host: '127.0.0.1', port: 9090 });
     expect(config.operations).toEqual({ host: '127.0.0.1', port: 9091 });

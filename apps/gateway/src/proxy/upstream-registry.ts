@@ -32,7 +32,13 @@ export class UpstreamRegistry {
     return upstream;
   }
 
+  /** Waits for in-flight upstream requests to finish, then closes the pools. */
   async close(): Promise<void> {
     await Promise.all([...this.#upstreams.values()].map(({ dispatcher }) => dispatcher.close()));
+  }
+
+  /** Aborts in-flight upstream requests and closes the pools immediately. */
+  async destroy(): Promise<void> {
+    await Promise.all([...this.#upstreams.values()].map(({ dispatcher }) => dispatcher.destroy()));
   }
 }

@@ -1,4 +1,10 @@
-export { createGateway, newRequestId, type Gateway, type GatewayOptions } from './app.ts';
+export {
+  createGateway,
+  newRequestId,
+  type Gateway,
+  type GatewayOptions,
+  type ShutdownResult,
+} from './app.ts';
 export {
   resolveClientAddress,
   TrustedProxies,

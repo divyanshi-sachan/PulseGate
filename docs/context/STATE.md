@@ -1,11 +1,10 @@
 # Project State
 
-_Last updated: 2026-10-23 (gateway proxy)_
+_Last updated: 2026-10-23 (Phase 1 complete)_
 
 ## Current phase
-**Phase 1 — Gateway foundation, in progress.** pnpm monorepo scaffolded (ADR-0025); `packages/shared` holds
-the normalized error registry; `packages/config` validates and loads config (ADR-0026); `apps/gateway` proxies
-configured routes with health/ready (ADR-0028). `pnpm check` passes (113 tests).
+**Phase 1 — Gateway foundation: complete** (exit criterion verified in Docker). Next is **Phase 2 — API-key auth and
+local rate limiting** (technical_implementation.md §14).
 
 ## Done
 - Product, system-design and implementation specs written.
@@ -21,13 +20,18 @@ configured routes with health/ready (ADR-0028). `pnpm check` passes (113 tests).
   `GatewayError` + registry and 5 tests (ADR-0025).
 - `packages/config`: schema for ADRs 0013–0024, loader (YAML/JSON), actionable `ConfigError`, example config, 51 tests (ADR-0026).
 - `apps/gateway`: routing, header forwarding, streaming size limits, timeouts, upgrade rejection, ops listener; 57 tests (ADR-0027, 0028).
+- `examples/mock-upstreams` (8 tests), Dockerfile, docker-compose.yml, README quickstart (ADR-0029, accepted after review).
+- Bounded graceful shutdown + readiness scope (ADR-0030); false mid-stream warning fixed. `pnpm check`: 129 tests.
 
-## Next up (Phase 1 — Gateway foundation, technical_implementation.md §14)
-0. Review ADR-0026 defaults and ADR-0028 implementation choices (backslash → 400, deadline covers body streaming).
-1. `examples/mock-upstreams` (delay/reset/5xx/oversized modes) + Docker Compose dev environment; then Phase 1 is done.
-2. Phase 2: API-key auth (needs a design for client/key config) + local token-bucket limiter.
+## Next up (Phase 2 — Local rate limiting and authentication, technical_implementation.md §14)
+0. Review the Claude-chosen ADRs: 0026 (config defaults), 0028 (gateway choices).
+1. Design API clients and key config (open: how keys are supplied via env/secrets file, hashing, rotation; PRD FR-02) → ADR.
+2. Auth middleware: `X-API-Key` → client identity, 401 `AUTHENTICATION_FAILED`, never log keys.
+3. Token-bucket `RateLimiter` interface + `LocalTokenBucketLimiter` (injected clock, bounded keys, idle eviction; ADR-0004),
+   rate-limit headers (Q9) and the unauthenticated-route key (Q8).
+4. Wire into the pipeline after auth, before the proxy (ADR-0010).
 
-Exit criteria: a client can call a configured route and receive the correct upstream response.
+Exit criteria: concurrent tests demonstrate correct local bucket behavior.
 
 ## Blockers / risks
 - Later phases still need Q3, Q6, Q8, Q9, Q11 (see OPEN_QUESTIONS.md).

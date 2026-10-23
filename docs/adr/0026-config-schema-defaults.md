@@ -18,6 +18,7 @@ including the request and response size-limit keys ADR-0018 deferred.
 | `server.trustedProxies` | `[]` | IPs or CIDRs (ADR-0021) |
 | `server.limits.maxRequestBodyBytes` | `1048576` (1 MiB) | Over the limit → 413 (ADR-0018) |
 | `server.limits.maxResponseBodyBytes` | `10485760` (10 MiB) | Over the limit → 502 `UPSTREAM_RESPONSE_TOO_LARGE` |
+| `server.shutdownTimeoutMs` | `10000` | Drain deadline on SIGTERM, 0–120000 (added by ADR-0030) |
 | `admin.host` / `admin.port` | **`127.0.0.1`** / `9090` | ADR-0020 didn't specify a bind address; loopback chosen for safety |
 | `operations.host` / `operations.port` | `127.0.0.1` / `9091` | ADR-0022 |
 | `rateLimit.mode` | `local` | `redis` **requires** `redisFailurePolicy: open \| closed` (no default, per ADR-0005) |

@@ -1,0 +1,10 @@
+**/node_modules
+**/dist
+**/coverage
+.git
+.claude
+docs
+benchmarks/reports
+*.md
+.env
+.env.*

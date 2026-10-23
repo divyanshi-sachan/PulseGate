@@ -3,6 +3,7 @@ import { createServer, request as httpRequest } from 'node:http';
 import { connect, type AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  captureLogs,
   configFor,
   jsonBody,
   send,
@@ -106,6 +107,59 @@ describe('forwarding (ADR-0013, ADR-0019)', () => {
     const response = await send(gw.port, { path: '/api/orders/999' });
     expect(response.status).toBe(404);
     expect(response.body).toBe('no such order');
+  });
+});
+
+describe('request logging (ADR-0028)', () => {
+  it('writes exactly one info line per successful request and no warnings', async () => {
+    const upstream = await startUpstream();
+    cleanups.push(() => upstream.close());
+    const logs = captureLogs();
+    const gw = await startGateway(configFor(upstream.url), logs.options);
+    cleanups.push(() => gw.close());
+
+    await send(gw.port, {
+      path: '/api/orders/1?token=secret-query',
+      headers: { 'x-api-key': 'pk_secret' },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    const lines = logs.lines().filter((line) => line['requestId'] !== undefined);
+    expect(lines.map((line) => line['msg'])).toEqual(['request completed']);
+    expect(lines[0]).toMatchObject({
+      level: 30,
+      routeId: 'route-0',
+      path: '/api/orders/1',
+      statusCode: 200,
+    });
+    expect(lines[0]?.['errorCode']).toBeUndefined();
+    const all = JSON.stringify(logs.lines());
+    expect(all).not.toContain('pk_secret');
+    expect(all).not.toContain('secret-query');
+  });
+
+  it('logs a mid-stream abort with its error code', async () => {
+    const upstream = await startUpstream((_req, res) => {
+      res.write(Buffer.alloc(48 * 1024, 'x'));
+      res.end(Buffer.alloc(48 * 1024, 'x'));
+    });
+    cleanups.push(() => upstream.close());
+    const logs = captureLogs();
+    const gw = await startGateway(
+      configFor(upstream.url, [{}], { server: { limits: { maxResponseBodyBytes: 64 * 1024 } } }),
+      logs.options,
+    );
+    cleanups.push(() => gw.close());
+
+    await send(gw.port, { path: '/api/orders' }).catch(() => undefined);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(logs.lines()).toContainEqual(
+      expect.objectContaining({
+        msg: 'response aborted mid-stream',
+        errorCode: 'UPSTREAM_RESPONSE_TOO_LARGE',
+      }),
+    );
   });
 });
 
@@ -302,15 +356,45 @@ describe('upstream failures (ADR-0011, ADR-0018)', () => {
         pump();
       },
     });
-    const outcome = await send(gw.port, { path: '/api/orders' }).then(
-      (response) => ({ ok: true, length: response.body.length }),
-      (error: unknown) => ({ ok: false, error }),
+    // Headers are already sent when the limit is crossed, so the client sees a 200 whose body is cut off.
+    const outcome = await new Promise<{ status: number; received: number; complete: boolean }>(
+      (resolve, reject) => {
+        const req = httpRequest({
+          host: '127.0.0.1',
+          port: gw.port,
+          path: '/api/orders',
+          agent: false,
+        });
+        req.on('error', reject);
+        req.on('response', (res) => {
+          let received = 0;
+          res.on('data', (chunk: Buffer) => (received += chunk.length));
+          res.on('error', () => undefined);
+          res.on('close', () => {
+            resolve({ status: res.statusCode ?? 0, received, complete: res.complete });
+          });
+        });
+        req.end();
+      },
     );
-    // The client either sees a reset or a truncated body, never the full 16 MB.
-    if (outcome.ok) expect((outcome as { length: number }).length).toBeLessThan(16 * 1024 * 1000);
-    else expect(outcome.ok).toBe(false);
-    // The upstream read was stopped well before it finished writing.
+    expect(outcome.status).toBe(200);
+    expect(outcome.complete).toBe(false);
+    expect(outcome.received).toBeLessThanOrEqual(64 * 1024);
+    // The upstream read was stopped well before the upstream finished writing 16 MB.
     expect(upstreamWrites).toBeLessThan(1000);
+  });
+
+  it('serves a chunked response that stays within the limit in full', async () => {
+    const { gw } = await setup({
+      extra: { server: { limits: { maxResponseBodyBytes: 64 * 1024 } } },
+      handler: (_req, res) => {
+        res.write(Buffer.alloc(32 * 1024, 'x'));
+        res.end(Buffer.alloc(32 * 1024, 'x'));
+      },
+    });
+    const response = await send(gw.port, { path: '/api/orders' });
+    expect(response.status).toBe(200);
+    expect(response.body.length).toBe(64 * 1024);
   });
 });
 

@@ -29,8 +29,17 @@ export interface Gateway {
   readonly operations: FastifyInstance;
   /** Listens on the configured hosts and ports. */
   start(): Promise<void>;
-  /** Stops accepting traffic, drains in-flight requests and closes upstream pools. */
-  close(): Promise<void>;
+  /**
+   * Graceful shutdown (ADR-0030): /ready turns 503, the public listener stops accepting, in-flight
+   * requests drain for up to `server.shutdownTimeoutMs`, then remaining connections and upstream calls
+   * are force-closed. Idempotent: repeated calls return the same promise.
+   */
+  close(): Promise<ShutdownResult>;
+}
+
+export interface ShutdownResult {
+  /** True when the drain deadline expired and connections were force-closed. */
+  forced: boolean;
 }
 
 /** Gateway request IDs are always generated, never taken from the client (ADR-0027). */
@@ -158,7 +167,7 @@ function buildPublicServer(
           const code = isGatewayError(error) ? error.code : 'UPSTREAM_UNAVAILABLE';
           outcome.errorCode = code;
           request.log.warn(
-            { routeId: outcome.routeId, errorCode: code },
+            { routeId: outcome.routeId, errorCode: code, err: error },
             'response aborted mid-stream',
           );
         },
@@ -229,6 +238,30 @@ export function createGateway(config: GatewayConfig, options: GatewayOptions = {
   let ready = false;
   const publicServer = buildPublicServer(config, options, upstreams);
   const operations = buildOperationsServer(options, () => ready);
+  let closing: Promise<ShutdownResult> | undefined;
+
+  async function shutdown(): Promise<ShutdownResult> {
+    ready = false;
+    // An object, not a let: the flag is set inside the timer callback.
+    const state = { forced: false };
+    const deadline = setTimeout(() => {
+      state.forced = true;
+      publicServer.log.warn(
+        { shutdownTimeoutMs: config.server.shutdownTimeoutMs },
+        'drain deadline reached; closing remaining connections',
+      );
+      // Closing client sockets aborts their upstream calls through the client signal.
+      publicServer.server.closeAllConnections();
+    }, config.server.shutdownTimeoutMs);
+    try {
+      await publicServer.close();
+    } finally {
+      clearTimeout(deadline);
+    }
+    await (state.forced ? upstreams.destroy() : upstreams.close());
+    await operations.close();
+    return { forced: state.forced };
+  }
 
   return {
     public: publicServer,
@@ -238,11 +271,9 @@ export function createGateway(config: GatewayConfig, options: GatewayOptions = {
       await publicServer.listen({ host: config.server.host, port: config.server.port });
       ready = true;
     },
-    async close() {
-      ready = false;
-      await publicServer.close();
-      await upstreams.close();
-      await operations.close();
+    close() {
+      closing ??= shutdown();
+      return closing;
     },
   };
 }

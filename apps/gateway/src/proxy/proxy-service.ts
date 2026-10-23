@@ -128,7 +128,8 @@ export class ProxyService {
       () => new GatewayError('UPSTREAM_RESPONSE_TOO_LARGE'),
     );
     const responseBody = pipeline(response.body, limited, (error) => {
-      if (error !== null && !input.clientSignal.aborted) {
+      // On success Node passes `undefined` here, although @types/node declares `Error | null`.
+      if (error instanceof Error && !input.clientSignal.aborted) {
         input.onBodyError(deadline.aborted ? new GatewayError('UPSTREAM_TIMEOUT') : error);
       }
     });

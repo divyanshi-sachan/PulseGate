@@ -9,7 +9,7 @@ import {
 } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { parseConfig, type GatewayConfig } from '@pulsegate/config';
-import { createGateway, type Gateway } from '../src/index.ts';
+import { createGateway, type Gateway, type GatewayOptions } from '../src/index.ts';
 
 export interface RecordedRequest {
   method: string;
@@ -91,11 +91,31 @@ export interface RunningGateway {
 }
 
 /** Starts only the public listener on an ephemeral port. */
-export async function startGateway(config: GatewayConfig): Promise<RunningGateway> {
-  const gateway = createGateway(config, { logger: false });
+export async function startGateway(
+  config: GatewayConfig,
+  options: GatewayOptions = { logger: false },
+): Promise<RunningGateway> {
+  const gateway = createGateway(config, options);
   await gateway.public.listen({ host: '127.0.0.1', port: 0 });
   const { port } = gateway.public.server.address() as AddressInfo;
-  return { gateway, port, close: () => gateway.close() };
+  return {
+    gateway,
+    port,
+    close: async () => {
+      await gateway.close();
+    },
+  };
+}
+
+/** Returns a port that was free a moment ago (for tests that must use gateway.start()). */
+export async function freePort(): Promise<number> {
+  const probe = createServer();
+  probe.listen(0, '127.0.0.1');
+  await once(probe, 'listening');
+  const { port } = probe.address() as AddressInfo;
+  probe.close();
+  await once(probe, 'close');
+  return port;
 }
 
 export interface RawResponse {
@@ -144,4 +164,13 @@ export async function send(port: number, options: RawRequest): Promise<RawRespon
 
 export function jsonBody(response: RawResponse): unknown {
   return JSON.parse(response.body);
+}
+
+/** Logger options that capture pino JSON lines in memory, for asserting on real log output. */
+export function captureLogs(): { options: GatewayOptions; lines: () => Record<string, unknown>[] } {
+  const raw: string[] = [];
+  return {
+    options: { logger: { level: 'info', stream: { write: (line: string) => raw.push(line) } } },
+    lines: () => raw.map((line) => JSON.parse(line) as Record<string, unknown>),
+  };
 }
