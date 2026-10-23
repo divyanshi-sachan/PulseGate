@@ -46,7 +46,8 @@ These come straight from the specs; violating one requires an ADR first.
 - **Retries:** bounded attempts (`maxAttempts` = total incl. first, ADR-0016), exponential backoff **with jitter**, never exceed the request deadline,
   **no automatic retry of non-idempotent methods** unless an explicit idempotency mechanism is configured.
 - **Circuit breaker:** one per upstream, in-memory per instance (MVP). States CLOSED/OPEN/HALF_OPEN,
-  bounded half-open probes, transitions centralized, logged and metered. Ordinary 4xx ≠ upstream failure.
+  bounded half-open probes, transitions centralized, logged and metered. Consecutive failures per attempt (ADR-0024);
+  4xx (upstream or gateway), client aborts and `CIRCUIT_OPEN` never count; `UPSTREAM_RESPONSE_TOO_LARGE` counts once, no retry.
 - **Rate limiting:** `RateLimiter` Strategy interface; local = per-instance (not global); Redis = single
   atomic Lua script using **Redis server time**; Redis outage → explicit `fail-open | fail-closed`, never silent.
 - **Caching:** conservative by default — GET + success only, TTL + size + entry bounds, respect
@@ -54,7 +55,7 @@ These come straight from the specs; violating one requires an ADR first.
 - **Security:** never log/label/cache raw API keys or auth headers; admin on its own port with an `ADMIN_TOKEN` bearer (ADR-0020);
   upstreams only from validated config — routes reference them by `upstreamId` (ADR-0013), `baseUrl` http/https and path-only, never from requests (SSRF); raw-path forwarding with dot segments rejected (ADR-0019);
   strip hop-by-hop headers and `X-API-Key` before forwarding, `Authorization` only on opt-in, `X-Forwarded-*` only from
-  `server.trustedProxies` (ADR-0021); request/response size limits;
+  `server.trustedProxies` (ADR-0021); no protocol upgrades / WebSockets / CONNECT in v1, rejected with 400 (ADR-0023); request/response size limits;
   secrets only via env (`.env.example` is committed, `.env` never is).
 - **Errors:** typed `GatewayErrorCode` + HTTP status + `requestId` in one normalized JSON shape;
   no stack traces to clients. Full registry in ADR-0018: 400 malformed / 401 auth / 404 route / 405 method /
@@ -87,7 +88,7 @@ Packages expose small public interfaces; the gateway composes interfaces, never 
 - Inject clocks (`now()`/monotonic) and randomness (jitter) — **tests use fake clocks, never sleeps.**
 - Every component ships with unit tests covering its failure behavior (see system_design §15 table).
 - Integration tests use real Redis (test container) and mock upstreams that can delay/reset/5xx.
-- Bound everything: maps, queues, retries, concurrency, body sizes.
+- Bound everything: maps, queues, retries, concurrency, body sizes. Enforce size limits while streaming, never by buffering.
 
 ## Commands (fill in once scaffolded)
 

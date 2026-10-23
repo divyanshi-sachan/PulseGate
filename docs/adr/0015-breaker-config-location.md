@@ -36,4 +36,5 @@ resolved once at startup (default ⊕ override) and validated (positive integers
 ## Consequences
 - `CircuitBreakerRegistry` is built from the resolved per-upstream settings.
 - Tests: defaults applied when omitted; partial override merges field by field; invalid values fail startup.
-- The half-open success threshold (Q11) and failure-counting rule (Q12) are still open.
+- ADR-0024 adds `failureStatuses` (default `[500, 502, 503, 504]`) to this block and defines the counting rule.
+  The half-open success threshold (Q11) is still open.

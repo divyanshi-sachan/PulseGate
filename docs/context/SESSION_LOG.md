@@ -50,3 +50,14 @@ Format: date · goal · what changed · decisions (ADR links) · open threads.
   [0021](../adr/0021-header-forwarding.md) strip hop-by-hop + `X-API-Key`, `Authorization` opt-in via `forwarding.authorization`,
   `X-Forwarded-*` rebuilt from `server.trustedProxies`; [0022](../adr/0022-operations-listener.md) ops listener 9091 on 127.0.0.1, always on.
 - **Open threads:** Phase 1 fully unblocked. Config names `forwarding.{authorization,forwardedHost}` were chosen by Claude. Q17 (request-ID handling) is new.
+
+## 2026-10-23 · Q12 breaker failures, no WebSockets
+- **Goal:** record the user's Q12 resolution, the no-WebSocket scope and the acceptance tests from their review.
+- **Changed:** ADRs 0021–0022 committed (f9257c7). Added ADRs 0023–0024; amended 0015, 0016, 0018, 0021 (cross-refs and
+  acceptance tests); updated ADR index, OPEN_QUESTIONS (Q12 resolved), CLAUDE.md invariants, STATE.
+- **Decisions:** [0023](../adr/0023-no-websockets-v1.md) upgrades/h2c/CONNECT get an explicit 400 via Node `upgrade`/`connect`
+  handlers, never 101; [0024](../adr/0024-breaker-failure-classification.md) consecutive failures per attempt, breaker checked
+  before every retry, `failureStatuses` default [500,502,503,504], `UPSTREAM_RESPONSE_TOO_LARGE` counts once and isn't retried,
+  client aborts don't count, size limit enforced while streaming.
+- **Open threads:** Claude-chosen details to confirm: `failureStatuses` default, CONNECT handling, upstream 101 → 502,
+  last error returned when breaker opens mid-retry. Remaining open: Q3, Q6, Q8, Q9, Q11, Q13, Q14, Q17.

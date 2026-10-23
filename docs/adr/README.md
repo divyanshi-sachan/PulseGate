@@ -27,3 +27,5 @@ Accepted ADRs **override** the spec documents where they conflict. Create new on
 | [0020](0020-admin-authentication.md) | Admin API on a separate port with a bearer token | Accepted |
 | [0021](0021-header-forwarding.md) | Header forwarding and trusted-proxy rules | Accepted |
 | [0022](0022-operations-listener.md) | Separate operations listener for health, readiness and metrics | Accepted |
+| [0023](0023-no-websockets-v1.md) | No WebSocket or protocol-upgrade support in v1 | Accepted |
+| [0024](0024-breaker-failure-classification.md) | Circuit-breaker failure classification and counting | Accepted |

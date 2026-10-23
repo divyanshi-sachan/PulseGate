@@ -22,6 +22,8 @@ retries:
 ```
 
 - Connection errors are always retryable, in addition to `retryableStatuses`.
+- `retryableStatuses` matches only statuses **returned by the upstream**. Gateway-generated errors such as
+  `UPSTREAM_RESPONSE_TOO_LARGE` (502) are never retried by default (ADR-0024).
 - All ADR-0007 limits still apply: only idempotent methods (unless an explicit idempotency mechanism is
   configured), exponential backoff with jitter capped at `maxDelayMs`, and never past the request deadline (`timeoutMs`).
 

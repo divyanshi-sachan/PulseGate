@@ -19,7 +19,7 @@ could spoof the IP used for rate limiting.
 |---|---|
 | `Host` | Set to the configured upstream host and port (from `baseUrl`). |
 | `Connection` | Strip it, **and every header named in its value**. |
-| `Keep-Alive`, `TE`, `Trailer`, `Transfer-Encoding`, `Upgrade`, `Proxy-Connection`, `Proxy-Authorization` | Strip. (No WebSocket/upgrade support in v1; it would need its own ADR.) |
+| `Keep-Alive`, `TE`, `Trailer`, `Transfer-Encoding`, `Upgrade`, `Proxy-Connection`, `Proxy-Authorization` | Strip. (Upgrade requests are rejected outright, see ADR-0023.) |
 | `X-API-Key` (the configured auth header) | Used for gateway authentication, then **always stripped**. |
 | `Authorization` | **Stripped by default.** Forwarded only when the route opts in with `forwarding.authorization: true`. Never logged. |
 | `X-Forwarded-For` | Rebuilt by the gateway using the trusted-proxy rules below. |
@@ -58,6 +58,11 @@ are passed through.
 ## Consequences
 - The two `forwarding` flags and `server.trustedProxies` join the Zod schema.
 - Routes with `forwarding.authorization: true` still bypass the cache by default (ADR-0009).
-- Tests: every row in both tables (stripped and preserved); headers named in `Connection` are stripped; spoofed
+- Acceptance tests (added 2026-10-23):
+  - The default config forwards neither `Authorization` nor `X-Forwarded-Host`.
+  - Enabling either flag on one route affects only that route.
+  - `X-API-Key`, hop-by-hop headers and headers named in `Connection` never reach the upstream.
+  - Untrusted incoming `X-Forwarded-*` values can't change the client identity used for rate limiting.
+- Also tested: every row in both tables (stripped and preserved); headers named in `Connection` are stripped; spoofed
   `X-Forwarded-For` from an untrusted peer is ignored; a trusted chain picks the right client IP; an invalid
   `X-Forwarded-Proto` is ignored; `Host` is rewritten; the raw query is unchanged (ADR-0019).

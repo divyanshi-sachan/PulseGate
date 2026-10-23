@@ -24,9 +24,7 @@ with the ADR link. `[blocks: X]` marks the phase or component that can't be fina
 
 - **Q11 — Half-open → closed threshold.** "After the required successful probes" but only `halfOpenMaxRequests` is configurable.
   *Proposed:* add `halfOpenSuccessThreshold` (default 1, ≤ `halfOpenMaxRequests`).
-
-- **Q12 — Breaker failure counting.** Consecutive failures or failures within a window? Per upstream attempt or per client request?
-  *Proposed:* consecutive failures, counted **per upstream attempt** (retries count), reset on success.
+  (ADR-0024 settles failure counting; a failed probe re-opens.)
 
 - **Q13 — Request deduplication (P1) has no design.** *Proposed:* defer; singleflight on the cache key for
   cache-eligible GETs only, designed in its own ADR before implementation.
@@ -49,3 +47,4 @@ with the ADR link. `[blocks: X]` marks the phase or component that can't be fina
 - **ADR-0017 follow-up → [ADR-0019](../adr/0019-upstream-url-joining.md):** raw-path joining `basePath + path`, dot segments → 400, `baseUrl` path-only, query forwarded byte-for-byte (bare `?` dropped).
 - **Q16 → [ADR-0021](../adr/0021-header-forwarding.md):** strip hop-by-hop (both directions) and `X-API-Key`; `Authorization` only via `forwarding.authorization`; rebuild `X-Forwarded-*` from `server.trustedProxies`.
 - **Q15 → [ADR-0022](../adr/0022-operations-listener.md):** operations listener on 9091 bound to 127.0.0.1 serves `/health`, `/ready`, `/metrics`, independent of admin.
+- **Q12 → [ADR-0024](../adr/0024-breaker-failure-classification.md):** consecutive failures per upstream attempt; `failureStatuses` default [500,502,503,504]; `UPSTREAM_RESPONSE_TOO_LARGE` counts once, never retried; gateway 4xx, upstream 4xx, client aborts and `CIRCUIT_OPEN` never count.

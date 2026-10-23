@@ -32,8 +32,10 @@ too big for the cache is simply not cached (cache bypass), not an error.
 - If `Content-Length` shows the limit is exceeded, return the 502 before sending any body.
 - If a streamed body crosses the limit after the response has started, the status can no longer change:
   abort the client connection, and log and count the event under the same code.
-- It counts as an upstream failure for metrics. Whether it counts toward the circuit breaker is decided
-  together with Q12 (failure counting).
+- It counts as an upstream failure for metrics and as **exactly one circuit-breaker failure**, and is **not retried**
+  by default (ADR-0024).
+- The limit is enforced **while streaming** (bytes counted as they flow, never by buffering the full body); on a
+  mid-stream violation the upstream read is terminated as well as the client response (ADR-0024).
 - The config key and default for the response limit are chosen with the request limit.
 
 Full registry after this ADR: `ROUTE_NOT_FOUND` 404, `METHOD_NOT_ALLOWED` 405, `BAD_REQUEST` 400,
@@ -46,3 +48,6 @@ Full registry after this ADR: `ROUTE_NOT_FOUND` 404, `METHOD_NOT_ALLOWED` 405, `
   neither changes breaker state; an upstream 400 is passed through as-is; an upstream response over the limit
   gets 502 `UPSTREAM_RESPONSE_TOO_LARGE` (via Content-Length) or an aborted connection (mid-stream); a response over
   the cache limit only is served but not cached.
+- Acceptance tests (added 2026-10-23): oversized response gets the 502 when nothing has been sent yet; the violation
+  increments the breaker failure count exactly once and triggers no retry; a streamed oversized response is terminated
+  safely without buffering the full body.
