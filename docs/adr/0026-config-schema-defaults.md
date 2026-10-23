@@ -22,6 +22,7 @@ including the request and response size-limit keys ADR-0018 deferred.
 | `admin.host` / `admin.port` | **`127.0.0.1`** / `9090` | ADR-0020 didn't specify a bind address; loopback chosen for safety |
 | `operations.host` / `operations.port` | `127.0.0.1` / `9091` | ADR-0022 |
 | `rateLimit.mode` | `local` | `redis` **requires** `redisFailurePolicy: open \| closed` (no default, per ADR-0005) |
+| `rateLimit.maxBuckets` | `100000` | Local-mode bucket cap before LRU eviction, max 10,000,000 (ADR-0032) |
 | `circuitBreaker.*` | `5` / `10000` / `1` / `[500,502,503,504]` | Merged field by field into each upstream (ADR-0015) |
 
 ### Route defaults
@@ -45,8 +46,8 @@ including the request and response size-limit keys ADR-0018 deferred.
 - **Status lists:** `retryableStatuses` ⊆ {408, 429, 5xx}; `failureStatuses` ⊆ 5xx. No duplicates.
 - **Bounds:** `maxAttempts` 1–10; `timeoutMs` 1–300000; backoff delays 0–60000 with `maxDelayMs ≥ baseDelayMs`;
   `ttlSeconds` 1–86400; ports 1–65535 and distinct across the three listeners; counts ≥ 1; refill rate > 0.
-- **Not in the config yet:** API clients and keys (Phase 2: secrets via env, design pending) and Redis connection
-  settings (Phase 4).
+- **Not in this file:** API clients and keys live in a separate clients file (ADR-0031). Redis connection settings
+  come in Phase 4.
 
 ### Validation behavior
 - Every object is **strict**: unknown keys are errors. Keys from older spec drafts get a hint

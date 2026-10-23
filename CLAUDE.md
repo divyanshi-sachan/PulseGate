@@ -52,7 +52,7 @@ These come straight from the specs; violating one requires an ADR first.
   atomic Lua script using **Redis server time**; Redis outage → explicit `fail-open | fail-closed`, never silent.
 - **Caching:** conservative by default — GET + success only, TTL + size + entry bounds, respect
   `private`/`no-store`, never cache personalized data under a shared key, no credentials in keys.
-- **Security:** never log/label/cache raw API keys or auth headers; admin on its own port with an `ADMIN_TOKEN` bearer (ADR-0020);
+- **Security:** never log/label/cache raw API keys, their digests or auth headers; store only SHA-256 digests (ADR-0031); admin on its own port with an `ADMIN_TOKEN` bearer (ADR-0020);
   upstreams only from validated config — routes reference them by `upstreamId` (ADR-0013), `baseUrl` http/https and path-only, never from requests (SSRF); raw-path forwarding with dot segments rejected (ADR-0019);
   strip hop-by-hop headers and `X-API-Key` before forwarding, `Authorization` only on opt-in, `X-Forwarded-*` only from
   `server.trustedProxies` (ADR-0021); no protocol upgrades / WebSockets / CONNECT in v1, rejected with 400 (ADR-0023); request/response size limits;
@@ -85,7 +85,9 @@ Each package: `package.json` exporting `"@pulsegate/source": "./src/index.ts"` t
 extending the base, and `src/index.ts` as the only public entry. Relative imports use `.ts` extensions; no enums,
 namespaces or parameter properties (`erasableSyntaxOnly`). Existing: `packages/shared` (error registry),
 `packages/config` (Zod schema + loader; defaults in ADR-0026, documented in `config/routes.example.yaml`).
-`apps/gateway` (Fastify public + operations listeners, RouteRegistry → UpstreamRegistry → ProxyService; ADR-0028).
+`packages/rate-limiter` (RateLimiter strategy + LocalTokenBucketLimiter, ADR-0032),
+`apps/gateway` (Fastify listeners; validate → match → ApiKeyAuthenticator → rate limit → ProxyService; ADR-0028, 0031).
+Clients file (`PULSEGATE_CLIENTS`, example `config/clients.example.yaml`) holds SHA-256 key digests only.
 Unit tests sit next to code in `src/`; socket-level integration tests with mock upstreams in `apps/gateway/test/`.
 `examples/mock-upstreams` (dev/demo upstream with `_delay`/`_status`/`_reset`/`_bytes`/`_failRate` query faults).
 Docker: one multi-stage `Dockerfile` (targets `gateway`, `mock-upstreams`); Compose mounts `config/routes.example.yaml`.
@@ -114,6 +116,7 @@ pnpm lint             # eslint (typescript-eslint strictTypeChecked)
 pnpm typecheck        # tsc --noEmit over the whole repo
 pnpm format           # prettier --write (markdown is excluded)
 pnpm build            # tsc per package → dist (topological)
+pnpm keygen --client <id>   # new API key (shown once) + SHA-256 snippet for the clients file (ADR-0031)
 pnpm --filter @pulsegate/gateway dev   # run gateway from source (PULSEGATE_CONFIG, LOG_LEVEL)
 pnpm dev:up           # docker compose up --build: gateway :8080 + orders/payments mocks (ADR-0029)
 pnpm dev:down         # docker compose down

@@ -1,7 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import type { ServerResponse } from 'node:http';
 import type { Duplex } from 'node:stream';
-import type { GatewayConfig } from '@pulsegate/config';
+import {
+  assertClientsForAuth,
+  ConfigError,
+  type ClientsConfig,
+  type GatewayConfig,
+} from '@pulsegate/config';
+import { LocalTokenBucketLimiter, type RateLimiter } from '@pulsegate/rate-limiter';
 import { GatewayError, isGatewayError } from '@pulsegate/shared';
 import fastify, {
   LogController,
@@ -11,6 +17,11 @@ import fastify, {
   type FastifyRequest,
   type FastifyServerOptions,
 } from 'fastify';
+import {
+  ApiKeyAuthenticator,
+  AuthenticationError,
+  type ClientIdentity,
+} from './auth/authenticator.ts';
 import { resolveClientAddress, TrustedProxies } from './proxy/client-address.ts';
 import { ClientAbortedError, ProxyService } from './proxy/proxy-service.ts';
 import { UpstreamRegistry } from './proxy/upstream-registry.ts';
@@ -20,6 +31,10 @@ import { MethodNotAllowedError, RouteRegistry } from './routing/route-registry.t
 export interface GatewayOptions {
   /** Fastify logger setting; defaults to pino at LOG_LEVEL (or "info"). */
   logger?: FastifyServerOptions['logger'];
+  /** Validated clients file; required when any route has auth.required (ADR-0031). */
+  clients?: ClientsConfig;
+  /** Rate limiter override, e.g. a limiter with a fake clock in tests (default: local, ADR-0032). */
+  limiter?: RateLimiter;
 }
 
 export interface Gateway {
@@ -49,8 +64,13 @@ export function newRequestId(): string {
 
 interface RequestOutcome {
   routeId?: string;
+  clientId?: string;
+  authFailure?: string;
   errorCode?: string;
 }
+
+/** How often full buckets are swept from the local limiter (ADR-0032). */
+const SWEEP_INTERVAL_MS = 60_000;
 
 function sendError(reply: FastifyReply, error: GatewayError, requestId: string): FastifyReply {
   if (error instanceof MethodNotAllowedError) void reply.header('allow', error.allow);
@@ -104,7 +124,10 @@ function buildPublicServer(
   config: GatewayConfig,
   options: GatewayOptions,
   upstreams: UpstreamRegistry,
+  limiter: RateLimiter,
 ) {
+  const authenticator =
+    options.clients === undefined ? undefined : new ApiKeyAuthenticator(options.clients);
   const routes = new RouteRegistry(config.routes);
   const trusted = new TrustedProxies(config.server.trustedProxies);
   const proxy = new ProxyService(config.server.limits);
@@ -146,12 +169,38 @@ function buildPublicServer(
       const match = routes.match(request.raw.method ?? '', target.rawPath);
       outcome.routeId = match.route.id;
 
+      let identity: ClientIdentity | undefined;
+      if (match.route.auth.required) {
+        // createGateway refuses to start without clients when a route needs auth.
+        if (authenticator === undefined) throw new GatewayError('INTERNAL_ERROR');
+        identity = authenticator.authenticate(request.headers['x-api-key']);
+        outcome.clientId = identity.clientId;
+      }
+
       const forwardedForHeader = request.headers['x-forwarded-for'];
       const address = resolveClientAddress(
         request.raw.socket.remoteAddress ?? '',
         Array.isArray(forwardedForHeader) ? forwardedForHeader.join(',') : forwardedForHeader,
         trusted,
       );
+
+      // Per route and caller: client id when authenticated, otherwise the resolved client IP (ADR-0032).
+      const subject =
+        identity === undefined ? `ip:${address.clientIp}` : `client:${identity.clientId}`;
+      const decision = await limiter.consume(`${match.route.id}:${subject}`, match.route.rateLimit);
+      const rateHeaders = {
+        'x-ratelimit-limit': String(decision.limit),
+        'x-ratelimit-remaining': String(decision.remaining),
+        'x-ratelimit-reset': String(Math.ceil(decision.resetAfterMs / 1000)),
+      };
+      void reply.headers(rateHeaders);
+      if (!decision.allowed) {
+        void reply.header(
+          'retry-after',
+          String(Math.max(1, Math.ceil(decision.retryAfterMs / 1000))),
+        );
+        throw new GatewayError('RATE_LIMIT_EXCEEDED');
+      }
 
       const result = await proxy.forward({
         request: request.raw,
@@ -176,6 +225,7 @@ function buildPublicServer(
       return await reply
         .code(result.statusCode)
         .headers(result.headers)
+        .headers(rateHeaders)
         .header('x-request-id', request.id)
         .send(result.body);
     } catch (error) {
@@ -187,6 +237,7 @@ function buildPublicServer(
         ? error
         : new GatewayError('INTERNAL_ERROR', { cause: error });
       outcome.errorCode = gatewayError.code;
+      if (gatewayError instanceof AuthenticationError) outcome.authFailure = gatewayError.reason;
       if (gatewayError.code === 'INTERNAL_ERROR' || gatewayError.status >= 502) {
         request.log.warn(
           {
@@ -210,11 +261,13 @@ function buildPublicServer(
     request.log.info(
       {
         routeId: outcome?.routeId,
+        clientId: outcome?.clientId,
         method: request.raw.method,
         path: queryStart === -1 ? request.raw.url : request.raw.url?.slice(0, queryStart),
         statusCode: reply.statusCode,
         durationMs: Math.round(reply.elapsedTime * 100) / 100,
         errorCode: outcome?.errorCode,
+        authFailure: outcome?.authFailure,
       },
       'request completed',
     );
@@ -234,14 +287,43 @@ function buildOperationsServer(options: GatewayOptions, isReady: () => boolean) 
 }
 
 export function createGateway(config: GatewayConfig, options: GatewayOptions = {}): Gateway {
+  assertClientsForAuth(config, options.clients, 'clients file');
+  if (config.rateLimit.mode === 'redis' && options.limiter === undefined) {
+    throw new ConfigError([
+      { path: 'rateLimit.mode', message: '"redis" is not implemented yet (Phase 4); use "local"' },
+    ]);
+  }
+  const limiter =
+    options.limiter ?? new LocalTokenBucketLimiter({ maxBuckets: config.rateLimit.maxBuckets });
   const upstreams = new UpstreamRegistry(config.upstreams);
   let ready = false;
-  const publicServer = buildPublicServer(config, options, upstreams);
+  const publicServer = buildPublicServer(config, options, upstreams, limiter);
+
+  let lastLruEvictions = 0;
+  const sweeper =
+    limiter instanceof LocalTokenBucketLimiter
+      ? setInterval(() => {
+          limiter.sweep();
+          const { evictedLru, buckets } = limiter.stats();
+          if (evictedLru > lastLruEvictions) {
+            publicServer.log.warn(
+              {
+                evicted: evictedLru - lastLruEvictions,
+                buckets,
+                maxBuckets: config.rateLimit.maxBuckets,
+              },
+              'rate-limit bucket cap reached; least-recently-used buckets were evicted',
+            );
+            lastLruEvictions = evictedLru;
+          }
+        }, SWEEP_INTERVAL_MS).unref()
+      : undefined;
   const operations = buildOperationsServer(options, () => ready);
   let closing: Promise<ShutdownResult> | undefined;
 
   async function shutdown(): Promise<ShutdownResult> {
     ready = false;
+    clearInterval(sweeper);
     // An object, not a let: the flag is set inside the timer callback.
     const state = { forced: false };
     const deadline = setTimeout(() => {

@@ -16,9 +16,12 @@ services:
       target: gateway
     environment:
       PULSEGATE_CONFIG: /config/routes.yaml
+      PULSEGATE_CLIENTS: /config/clients.yaml
       LOG_LEVEL: info
     volumes:
       - ./config/routes.example.yaml:/config/routes.yaml:ro
+      # Local-only demo client; its public key is in README.md (ADR-0031).
+      - ./config/clients.example.yaml:/config/clients.yaml:ro
     ports:
       # Only the public listener is published. The operations listener (9091) stays on
       # 127.0.0.1 inside the container and is probed by the healthcheck below (ADR-0022).

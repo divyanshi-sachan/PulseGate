@@ -27,6 +27,14 @@ const UNKNOWN_KEY_HINTS: Record<string, string> = {
   'routes.upstream':
     'routes reference an upstream by "upstreamId"; define its URL under top-level "upstreams" (ADR-0013)',
   'routes.authRequired': 'use "auth: { required: true }" (ADR-0014)',
+  'clients.keys.key':
+    'never store raw API keys; put only the SHA-256 digest under "sha256" (run `pnpm keygen`, ADR-0031)',
+  'clients.keys.apiKey':
+    'never store raw API keys; put only the SHA-256 digest under "sha256" (run `pnpm keygen`, ADR-0031)',
+  'clients.key':
+    'never store raw API keys; put only the SHA-256 digest under "sha256" (run `pnpm keygen`, ADR-0031)',
+  'clients.apiKey':
+    'never store raw API keys; put only the SHA-256 digest under "sha256" (run `pnpm keygen`, ADR-0031)',
   'routes.circuitBreaker':
     'circuit-breaker settings belong on "upstreams[]" or the top-level "circuitBreaker" block (ADR-0015)',
 };

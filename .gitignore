@@ -9,3 +9,6 @@ benchmarks/reports/raw/
 # Claude Code: per-machine and per-session files
 .claude/settings.local.json
 .claude/state/
+# Local config copies (copy from the *.example.yaml files)
+config/routes.yaml
+config/clients.yaml

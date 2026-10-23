@@ -13,6 +13,7 @@ WORKDIR /repo
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/gateway/package.json apps/gateway/
 COPY packages/config/package.json packages/config/
+COPY packages/rate-limiter/package.json packages/rate-limiter/
 COPY packages/shared/package.json packages/shared/
 COPY examples/mock-upstreams/package.json examples/mock-upstreams/
 RUN pnpm install --frozen-lockfile

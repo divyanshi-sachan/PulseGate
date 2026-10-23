@@ -1,0 +1,16 @@
+# PulseGate example API clients file (ADR-0031).
+# Copy to config/clients.yaml (gitignored) or point PULSEGATE_CLIENTS at it.
+# Stores only SHA-256 digests of keys. Generate a new key with: pnpm keygen --client <id>
+#
+# The demo client below is PUBLIC and for local development only. Its raw key is in README.md:
+#   pg_NSMO1rF_e7v07Y_Qd3JxwQTqqx_bzqVXumT2LBwvf98
+# Never use it in a real deployment.
+
+clients:
+  - id: demo-client
+    name: 'Local demo client'
+    enabled: true # default true; false revokes every key of this client
+    keys:
+      - id: 'demo'
+        sha256: 'd5d72a57adfb7de1e477cccb7b865c60051bdea633926f23640aed5e623d5a78'
+        # expiresAt: "2027-01-01T00:00:00Z"   # optional; checked on every request

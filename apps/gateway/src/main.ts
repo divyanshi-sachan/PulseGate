@@ -1,11 +1,31 @@
-import { ConfigError, loadConfigFile } from '@pulsegate/config';
+import { access } from 'node:fs/promises';
+import {
+  assertClientsForAuth,
+  ConfigError,
+  loadClientsFile,
+  loadConfigFile,
+  type ClientsConfig,
+  type GatewayConfig,
+} from '@pulsegate/config';
 import { createGateway } from './app.ts';
 
 const configPath = process.env['PULSEGATE_CONFIG'] ?? 'config/routes.yaml';
+const clientsPath = process.env['PULSEGATE_CLIENTS'] ?? 'config/clients.yaml';
 
-let config;
+async function exists(path: string): Promise<boolean> {
+  return access(path).then(
+    () => true,
+    () => false,
+  );
+}
+
+let config: GatewayConfig;
+let clients: ClientsConfig | undefined;
 try {
   config = await loadConfigFile(configPath);
+  // The clients file is optional only when no route requires auth (ADR-0031).
+  if (await exists(clientsPath)) clients = await loadClientsFile(clientsPath);
+  assertClientsForAuth(config, clients, clientsPath);
 } catch (error) {
   if (error instanceof ConfigError) {
     console.error(error.message);
@@ -14,7 +34,7 @@ try {
   throw error;
 }
 
-const gateway = createGateway(config);
+const gateway = createGateway(config, clients === undefined ? {} : { clients });
 await gateway.start();
 
 for (const signal of ['SIGTERM', 'SIGINT'] as const) {

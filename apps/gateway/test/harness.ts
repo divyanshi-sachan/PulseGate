@@ -78,6 +78,8 @@ export function configFor(
       methods: ['GET'],
       upstreamId: 'orders-service',
       rateLimit: { capacity: 1000, refillRatePerSecond: 1000 },
+      // Proxy tests focus on forwarding; auth tests opt in with auth: { required: true }.
+      auth: { required: false },
       ...route,
     })),
     ...extra,

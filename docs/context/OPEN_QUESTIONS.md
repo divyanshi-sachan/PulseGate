@@ -15,13 +15,6 @@ with the ADR link. `[blocks: X]` marks the phase or component that can't be fina
   *Proposed:* API key does not by itself disable caching; cache key includes `clientId` by default
   (`scope: "client"`), with an explicit opt-in `scope: "shared"` for public data. `Authorization` header still bypasses.
 
-- **Q8 — Rate-limit key on routes with `auth.required: false`.** No client identity exists.
-  *Proposed:* key by client IP. ADR-0021 already defines how the client IP is derived (`server.trustedProxies`),
-  so only the keying choice itself is open.
-
-- **Q9 — Rate-limit headers.** `X-RateLimit-Limit/Remaining` vs IETF draft `RateLimit-*`; `Retry-After` on 429?
-  *Proposed:* `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset` + `Retry-After` (seconds) on 429.
-
 - **Q11 — Half-open → closed threshold.** "After the required successful probes" but only `halfOpenMaxRequests` is configurable.
   *Proposed:* add `halfOpenSuccessThreshold` (default 1, ≤ `halfOpenMaxRequests`).
   (ADR-0024 settles failure counting; a failed probe re-opens.)
@@ -45,3 +38,5 @@ with the ADR link. `[blocks: X]` marks the phase or component that can't be fina
 - **Q15 → [ADR-0022](../adr/0022-operations-listener.md):** operations listener on 9091 bound to 127.0.0.1 serves `/health`, `/ready`, `/metrics`, independent of admin.
 - **Q12 → [ADR-0024](../adr/0024-breaker-failure-classification.md):** consecutive failures per upstream attempt; `failureStatuses` default [500,502,503,504]; `UPSTREAM_RESPONSE_TOO_LARGE` counts once, never retried; gateway 4xx, upstream 4xx, client aborts and `CIRCUIT_OPEN` never count.
 - **Q17 → [ADR-0027](../adr/0027-request-ids.md):** always generate `req_<uuid>`; incoming `X-Request-ID` discarded; sent upstream and returned.
+- **Q8 → [ADR-0032](../adr/0032-local-rate-limiting.md):** unauthenticated routes are limited per route + client IP (IP from ADR-0021).
+- **Q9 → [ADR-0032](../adr/0032-local-rate-limiting.md):** `X-RateLimit-Limit/Remaining/Reset` on rate-limited routes; `Retry-After` on 429.

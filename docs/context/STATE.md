@@ -1,10 +1,10 @@
 # Project State
 
-_Last updated: 2026-10-23 (Phase 1 complete)_
+_Last updated: 2026-10-23 (Phase 2 complete)_
 
 ## Current phase
-**Phase 1 — Gateway foundation: complete** (exit criterion verified in Docker). Next is **Phase 2 — API-key auth and
-local rate limiting** (technical_implementation.md §14).
+**Phase 2 — Auth and local rate limiting: complete** (verified in Docker). Next is **Phase 3 — Reliability
+middleware** (timeouts already exist; add bounded retries, per-upstream circuit breakers and fault-injection tests).
 
 ## Done
 - Product, system-design and implementation specs written.
@@ -22,16 +22,19 @@ local rate limiting** (technical_implementation.md §14).
 - `apps/gateway`: routing, header forwarding, streaming size limits, timeouts, upgrade rejection, ops listener; 57 tests (ADR-0027, 0028).
 - `examples/mock-upstreams` (8 tests), Dockerfile, docker-compose.yml, README quickstart (ADR-0029, accepted after review).
 - Bounded graceful shutdown + readiness scope (ADR-0030); false mid-stream warning fixed. `pnpm check`: 129 tests.
+- Phase 2: clients file + `pnpm keygen` (ADR-0031), `ApiKeyAuthenticator`, `packages/rate-limiter` with
+  `LocalTokenBucketLimiter`, rate-limit headers and 429 (ADR-0032). `pnpm check`: 170 tests.
 
-## Next up (Phase 2 — Local rate limiting and authentication, technical_implementation.md §14)
+## Next up (Phase 3 — Reliability middleware, technical_implementation.md §14)
 0. Review the Claude-chosen ADRs: 0026 (config defaults), 0028 (gateway choices).
-1. Design API clients and key config (open: how keys are supplied via env/secrets file, hashing, rotation; PRD FR-02) → ADR.
-2. Auth middleware: `X-API-Key` → client identity, 401 `AUTHENTICATION_FAILED`, never log keys.
-3. Token-bucket `RateLimiter` interface + `LocalTokenBucketLimiter` (injected clock, bounded keys, idle eviction; ADR-0004),
-   rate-limit headers (Q9) and the unauthenticated-route key (Q8).
-4. Wire into the pipeline after auth, before the proxy (ADR-0010).
+1. Decide Q11 (half-open → closed success threshold) and Q3 (breaker state naming).
+2. Retry executor (ADR-0007, 0016): attempts within the deadline, full-jitter backoff (injected random), idempotent methods only,
+   upstream-returned statuses only (ADR-0024).
+3. `CircuitBreaker` + `CircuitBreakerRegistry` (State pattern, ADR-0008/0015/0024): checked before every attempt, 503 `CIRCUIT_OPEN`,
+   transitions logged.
+4. Fault-injection integration tests using `_failRate`/`_reset`/`_delay` upstream modes.
 
-Exit criteria: concurrent tests demonstrate correct local bucket behavior.
+Exit criteria: an unhealthy upstream can be isolated without crashing the gateway.
 
 ## Blockers / risks
 - Later phases still need Q3, Q6, Q8, Q9, Q11 (see OPEN_QUESTIONS.md).

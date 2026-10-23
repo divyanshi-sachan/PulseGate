@@ -1,7 +1,17 @@
+export {
+  assertClientsForAuth,
+  clientsFileSchema,
+  routesRequiringAuth,
+  type ApiClientConfig,
+  type ClientsConfig,
+  type ClientsFileInput,
+} from './clients.ts';
 export { ConfigError, type ConfigIssue } from './errors.ts';
 export {
   formatFromPath,
+  loadClientsFile,
   loadConfigFile,
+  parseClients,
   parseConfig,
   parseConfigText,
   type ConfigFormat,

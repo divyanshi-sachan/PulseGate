@@ -22,6 +22,7 @@ operations: # /health, /ready, /metrics, always on (ADR-0022)
 
 rateLimit:
   mode: 'local' # default; "redis" also requires redisFailurePolicy: "open" | "closed" (ADR-0005)
+  maxBuckets: 100000 # default; local mode evicts least-recently-used buckets beyond this (ADR-0032)
 
 circuitBreaker: # global defaults, overridable per upstream (ADR-0015, ADR-0024)
   failureThreshold: 5 # default; consecutive failed attempts before opening
@@ -45,8 +46,8 @@ routes:
     upstreamId: orders-service
     stripPrefix: false # default; true forwards /api/orders/123 as /123
     auth:
-      required: true # default
-    rateLimit: # required
+      required: true # default; needs a clients file with API keys (ADR-0031)
+    rateLimit: # required; per route and per client (per client IP when auth is off) (ADR-0032)
       capacity: 60
       refillRatePerSecond: 1
     timeoutMs: 3000 # default; total request deadline including retries
@@ -76,6 +77,8 @@ routes:
     pathPrefix: '/api/payments'
     methods: ['GET']
     upstreamId: payments-service
+    auth:
+      required: false # public route: rate-limited per client IP instead of per client
     rateLimit:
       capacity: 60
       refillRatePerSecond: 1

@@ -122,3 +122,15 @@ Format: date · goal · what changed · decisions (ADR links) · open threads.
   and forced close at the 2 s deadline (exit 0). `pnpm check`: 129 tests.
 - **Bug fixed:** every successful response logged a false "aborted mid-stream" warning (pipeline passes `undefined`, not `null`).
 - **Unexplained:** one Docker run was SIGKILLed after 1.2 s; not reproducible with an explicit `-t 10` or under Compose. Recorded in ADR-0030.
+
+## 2026-10-23 · Phase 2: API-key auth + local rate limiting
+- **Goal:** design (with the user) and build API-client config, auth and the local token-bucket limiter.
+- **Decisions (user, all recommended options):** [ADR-0031](../adr/0031-api-clients-and-keys.md): separate clients file with SHA-256
+  digests, `pg_` keys via `pnpm keygen`, multiple keys + expiry, rotate/revoke by restart, any client on any auth route, identical
+  401s; [ADR-0032](../adr/0032-local-rate-limiting.md): per route + client (or client IP), X-RateLimit-* + Retry-After, lossless
+  sweep then LRU at 100k buckets, no failed-auth throttling yet. Q8, Q9 resolved.
+- **Changed:** `packages/config` clients schema/loader + `rateLimit.maxBuckets`; new `packages/rate-limiter`; gateway auth module,
+  keygen, pipeline wiring, sweeper; harness routes default to `auth.required: false`; example config (payments public), clients
+  example with a public demo key, Compose mounts it, Dockerfile copies the new manifest; README, CLAUDE.md, ADR-0026.
+- **Verified:** `pnpm check` (170 tests); mutation checks (shared bucket, no-429) fail the new tests; Docker: 200/401/401, per-IP public
+  route, exactly 20/22 POSTs allowed with Retry-After 2, no key or digest in logs, failure reasons logged.

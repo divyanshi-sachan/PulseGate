@@ -60,7 +60,7 @@ describe('defaults', () => {
     });
     expect(config.admin).toEqual({ host: '127.0.0.1', port: 9090 });
     expect(config.operations).toEqual({ host: '127.0.0.1', port: 9091 });
-    expect(config.rateLimit).toEqual({ mode: 'local' });
+    expect(config.rateLimit).toEqual({ mode: 'local', maxBuckets: 100_000 });
     expect(config.routes[0]).toEqual({
       id: 'get-orders',
       pathPrefix: '/api/orders',
@@ -349,7 +349,11 @@ describe('rate-limit mode (ADR-0005)', () => {
     const config = parseConfig(
       withInput((c) => (c['rateLimit'] = { mode: 'redis', redisFailurePolicy: 'closed' })),
     );
-    expect(config.rateLimit).toEqual({ mode: 'redis', redisFailurePolicy: 'closed' });
+    expect(config.rateLimit).toEqual({
+      mode: 'redis',
+      redisFailurePolicy: 'closed',
+      maxBuckets: 100_000,
+    });
   });
 
   it('rejects a route without a rate limit', () => {

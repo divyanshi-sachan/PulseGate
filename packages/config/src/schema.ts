@@ -141,9 +141,11 @@ const rateLimitSchema = z
   .strictObject({
     mode: z.enum(['local', 'redis']).default('local'),
     redisFailurePolicy: z.enum(['open', 'closed']).optional(),
+    /** Local mode: max in-memory buckets before LRU eviction (ADR-0032). */
+    maxBuckets: positiveInt.max(10_000_000).default(100_000),
   })
   .transform((value, ctx) => {
-    if (value.mode === 'local') return { mode: 'local' as const };
+    if (value.mode === 'local') return { mode: 'local' as const, maxBuckets: value.maxBuckets };
     if (value.redisFailurePolicy === undefined) {
       ctx.addIssue({
         code: 'custom',
@@ -153,7 +155,11 @@ const rateLimitSchema = z
       });
       return z.NEVER;
     }
-    return { mode: 'redis' as const, redisFailurePolicy: value.redisFailurePolicy };
+    return {
+      mode: 'redis' as const,
+      redisFailurePolicy: value.redisFailurePolicy,
+      maxBuckets: value.maxBuckets,
+    };
   })
   .prefault({});
 
