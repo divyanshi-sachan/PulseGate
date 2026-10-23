@@ -174,3 +174,6 @@ Format: date · goal · what changed · decisions (ADR links) · open threads.
   (non-atomic JS, no fallback, readiness) all caught; Docker: exactly 30/100 across two instances, outage → 503 + not ready, recovery.
 - **Mistakes caught:** start() didn't wait for Redis (6/60 503s); tests initially shared one bucket key; skip warning swallowed by Vitest;
   a zsh variable-as-command slip made one Docker run do nothing (re-run correctly).
+- **Spec restored (user request):** `technical_implementation.md` reset to its original content from 088f5e2. Commit 6a3d0c9
+  had accidentally added 26 blank lines and a pasted `git add -A`, and an uncommitted edit had turned the closing principle into a
+  blockquote. The diff against 088f5e2 is now empty.
