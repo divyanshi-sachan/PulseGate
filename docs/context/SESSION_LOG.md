@@ -72,3 +72,14 @@ Format: date · goal · what changed · decisions (ADR links) · open threads.
 - **Verified:** `pnpm check` passes (format, lint, typecheck, 5 tests); `pnpm build` emits dist with `.js` imports;
   Node 26 runs package source directly. Cross-package source resolution not exercised yet (no consumer package).
 - **Open threads:** next is `packages/config` (Zod schema for ADRs 0013–0024; pick request/response size-limit keys).
+
+## 2026-10-23 · Phase 1: packages/config
+- **Goal:** Zod schema + loader implementing ADRs 0013–0024, with actionable errors and tests.
+- **Changed:** scaffold committed (22bc791). Added `packages/config` (schema.ts, errors.ts, loader.ts, 2 test files; deps zod 4.6.7,
+  yaml 2.9.1) and `config/routes.example.yaml`; ADR-0026; ADR index, CLAUDE.md, STATE updated.
+- **Decisions:** [ADR-0026](../adr/0026-config-schema-defaults.md), **chosen by Claude, pending user review**: size-limit keys under
+  `server.limits` (1 MiB / 10 MiB), admin bind 127.0.0.1, `auth.required` default true, `rateLimit` required per route,
+  `maxAttempts` default 1, bounds, method list, pathPrefix charset, strict unknown keys with legacy-key hints, frozen output.
+- **Verified:** `pnpm check` (56 tests) and `pnpm build` pass; a sample bad file yields 6 readable issues without echoing the URL password.
+- **Open threads:** cross-field errors only show once per-field errors are fixed (Zod limitation, documented). API-client/key config
+  is not designed yet (Phase 2). Next: `apps/gateway` (first consumer of the `@pulsegate/source` condition).

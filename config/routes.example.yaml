@@ -1,0 +1,80 @@
+# PulseGate example configuration.
+# Copy to config/routes.yaml and adjust. Validated at startup by @pulsegate/config;
+# unknown keys are rejected. Values shown with "# default" can be omitted (ADR-0026).
+# Secrets (API keys, ADMIN_TOKEN, Redis passwords) never go in this file; use env vars.
+
+server: # public gateway listener: proxied traffic only
+  host: '0.0.0.0' # default
+  port: 8080 # default
+  trustedProxies: [] # default; IPs/CIDRs whose X-Forwarded-* headers are trusted (ADR-0021)
+  limits:
+    maxRequestBodyBytes: 1048576 # default 1 MiB, larger bodies get 413 (ADR-0018)
+    maxResponseBodyBytes: 10485760 # default 10 MiB, larger responses get 502 (ADR-0018)
+
+admin: # /admin/*, only started when ADMIN_TOKEN is set (ADR-0020)
+  host: '127.0.0.1' # default
+  port: 9090 # default
+
+operations: # /health, /ready, /metrics, always on (ADR-0022)
+  host: '127.0.0.1' # default
+  port: 9091 # default
+
+rateLimit:
+  mode: 'local' # default; "redis" also requires redisFailurePolicy: "open" | "closed" (ADR-0005)
+
+circuitBreaker: # global defaults, overridable per upstream (ADR-0015, ADR-0024)
+  failureThreshold: 5 # default; consecutive failed attempts before opening
+  openDurationMs: 10000 # default
+  halfOpenMaxRequests: 1 # default
+  failureStatuses: [500, 502, 503, 504] # default; 5xx only
+
+upstreams: # the only place upstream URLs live (ADR-0013)
+  - id: orders-service
+    baseUrl: 'http://orders-mock:4001' # http/https, no query, fragment or credentials (ADR-0019)
+
+  - id: payments-service
+    baseUrl: 'http://payments-mock:4002'
+    circuitBreaker:
+      failureThreshold: 3 # override; other fields inherit the global block
+
+routes:
+  - id: get-orders
+    pathPrefix: '/api/orders' # segment match, longest prefix wins (ADR-0017)
+    methods: ['GET']
+    upstreamId: orders-service
+    stripPrefix: false # default; true forwards /api/orders/123 as /123
+    auth:
+      required: true # default
+    rateLimit: # required
+      capacity: 60
+      refillRatePerSecond: 1
+    timeoutMs: 3000 # default; total request deadline including retries
+    retries:
+      maxAttempts: 2 # default 1 (no retries); counts the first attempt (ADR-0016)
+      baseDelayMs: 50 # default
+      maxDelayMs: 1000 # default
+      retryableStatuses: [502, 503, 504] # default
+    cache:
+      enabled: true # default false
+      ttlSeconds: 30 # required when enabled
+      maxResponseBytes: 262144 # default
+    forwarding: # ADR-0021
+      authorization: false # default; forward the client's Authorization header
+      forwardedHost: false # default; add X-Forwarded-Host
+
+  - id: create-orders
+    pathPrefix: '/api/orders' # same prefix, different method: a separate route
+    methods: ['POST']
+    upstreamId: orders-service
+    rateLimit:
+      capacity: 20
+      refillRatePerSecond: 0.5
+    # POST is never retried automatically (ADR-0007), so retries are left at the default.
+
+  - id: get-payments
+    pathPrefix: '/api/payments'
+    methods: ['GET']
+    upstreamId: payments-service
+    rateLimit:
+      capacity: 60
+      refillRatePerSecond: 1

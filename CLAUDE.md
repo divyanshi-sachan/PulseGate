@@ -83,7 +83,9 @@ examples/mock-upstreams  config/routes.example.yaml  tests/{integration,e2e}  be
 Packages expose small public interfaces; the gateway composes interfaces, never imports internals.
 Each package: `package.json` exporting `"@pulsegate/source": "./src/index.ts"` then `dist`, a `tsconfig.build.json`
 extending the base, and `src/index.ts` as the only public entry. Relative imports use `.ts` extensions; no enums,
-namespaces or parameter properties (`erasableSyntaxOnly`). Existing: `packages/shared` (error registry).
+namespaces or parameter properties (`erasableSyntaxOnly`). Existing: `packages/shared` (error registry),
+`packages/config` (Zod schema + loader; defaults in ADR-0026, documented in `config/routes.example.yaml`).
+When changing config: update schema, ADR-0026, the example YAML and the defaults test together.
 
 ## Coding conventions
 

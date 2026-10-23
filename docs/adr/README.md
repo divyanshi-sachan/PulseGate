@@ -30,3 +30,4 @@ Accepted ADRs **override** the spec documents where they conflict. Create new on
 | [0023](0023-no-websockets-v1.md) | No WebSocket or protocol-upgrade support in v1 | Accepted |
 | [0024](0024-breaker-failure-classification.md) | Circuit-breaker failure classification and counting | Accepted |
 | [0025](0025-monorepo-tooling.md) | Monorepo tooling and TypeScript module setup | Accepted |
+| [0026](0026-config-schema-defaults.md) | Config schema defaults, bounds and validation behavior | Accepted (review) |
