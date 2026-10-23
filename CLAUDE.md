@@ -109,6 +109,14 @@ pnpm build            # tsc per package → dist (topological)
 docker compose up     # TODO (Phase 1 step 4)
 ```
 
+## Git workflow
+
+- **The user commits and pushes; Claude never runs `git commit` or `git push`.** When a piece of work is done and
+  `pnpm check` passes, stop and give the user ready-to-run commands (one per `bash` block): `git add -A`,
+  `git status --short`, and `git commit` with a descriptive message ending in the `Co-Authored-By` line.
+  Wait for the user to confirm they committed, then continue with the next step.
+- Remote: `origin` → https://github.com/divyanshi-sachan/PulseGate (branch `main`).
+
 ## Project slash commands
 
 - `/adr <title>` — record a decision (next number, template, index, resolve open question).

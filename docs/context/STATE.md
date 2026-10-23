@@ -21,7 +21,7 @@ the normalized error registry; `packages/config` validates and loads config (ADR
 - `packages/config`: schema for ADRs 0013–0024, loader (YAML/JSON), actionable `ConfigError`, example config, 51 tests (ADR-0026).
 
 ## Next up (Phase 1 — Gateway foundation, technical_implementation.md §14)
-0. Review ADR-0026 defaults (admin bind 127.0.0.1, auth.required true, maxAttempts 1, size limits 1 MiB / 10 MiB).
+0. (Committed as 991a3a6.) Review ADR-0026 defaults (admin bind 127.0.0.1, auth.required true, maxAttempts 1, size limits 1 MiB / 10 MiB).
 1. `apps/gateway`: Fastify server, route registry (segment-aware longest prefix + method, ADR-0017) → UpstreamRegistry → ProxyService via Undici (raw-path joining ADR-0019, header rules ADR-0021), request IDs, structured logs.
 2. `examples/mock-upstreams` + Docker Compose dev environment.
 
@@ -30,4 +30,4 @@ Exit criteria: a client can call a configured route and receive the correct upst
 ## Blockers / risks
 - None for Phase 1 (Q17 `X-Request-ID` handling is small; decide while building request IDs).
 - Later phases still need Q3, Q6, Q8, Q9, Q11 (see OPEN_QUESTIONS.md).
-- Repo: `backend/` has its own git repo on `main` (no remote yet).
+- Repo: `main` tracks `origin` (github.com/divyanshi-sachan/PulseGate). The user commits and pushes (see CLAUDE.md › Git workflow).

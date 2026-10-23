@@ -83,3 +83,8 @@ Format: date · goal · what changed · decisions (ADR links) · open threads.
 - **Verified:** `pnpm check` (56 tests) and `pnpm build` pass; a sample bad file yields 6 readable issues without echoing the URL password.
 - **Open threads:** cross-field errors only show once per-field errors are fixed (Zod limitation, documented). API-client/key config
   is not designed yet (Phase 2). Next: `apps/gateway` (first consumer of the `@pulsegate/source` condition).
+
+## 2026-10-23 · Commit workflow change
+- **Changed:** user committed `packages/config` as 991a3a6 and pushed to origin (github.com/divyanshi-sachan/PulseGate).
+  Added "Git workflow" to CLAUDE.md; STATE repo note updated.
+- **Decisions:** from now on Claude gives commit commands and waits for the user to commit; Claude doesn't commit or push.
