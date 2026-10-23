@@ -1,0 +1,31 @@
+# Distributed variant of routes.example.yaml for docker-compose.distributed.yml (ADR-0034).
+# Several gateway instances share one Redis-backed budget per route and caller.
+# REDIS_URL (with the password) comes from the environment, never from this file.
+
+rateLimit:
+  mode: 'redis'
+  redisFailurePolicy: 'closed' # reject with 503 RATE_LIMITER_UNAVAILABLE and report not ready while Redis is down
+  redis:
+    commandTimeoutMs: 50 # default
+    connectTimeoutMs: 2000 # default
+
+upstreams:
+  - id: orders-service
+    baseUrl: 'http://orders-mock:4001'
+  - id: payments-service
+    baseUrl: 'http://payments-mock:4002'
+
+routes:
+  - id: get-orders
+    pathPrefix: '/api/orders'
+    methods: ['GET']
+    upstreamId: orders-service
+    rateLimit: { capacity: 60, refillRatePerSecond: 1 }
+    retries: { maxAttempts: 2 }
+
+  - id: get-payments
+    pathPrefix: '/api/payments'
+    methods: ['GET']
+    upstreamId: payments-service
+    auth: { required: false }
+    rateLimit: { capacity: 30, refillRatePerSecond: 0.5 }

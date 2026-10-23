@@ -23,7 +23,8 @@ hold shutdown until the orchestrator sent SIGKILL. What `/ready` reflects was al
 
 ### Readiness scope
 - `/ready` = the process is started and not shutting down, **plus required dependencies**. In Phase 1 there are none.
-  Redis joins when distributed rate limiting requires it (Phase 4).
+  With `rateLimit.mode: "redis"` and fail-closed, `/ready` also pings Redis (ADR-0034). Fail-open ignores Redis,
+  because the instance can still serve with degraded local limits.
 - **Upstream health is deliberately not part of readiness.** An unreachable upstream is a per-request error (502/504)
   and, from Phase 3, a circuit-breaker concern. Making readiness depend on upstreams would take the gateway out of
   rotation for *all* routes when one upstream fails, which is the cascading failure ADR-0008 exists to prevent.

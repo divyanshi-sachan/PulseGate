@@ -142,17 +142,26 @@ const rateLimitSchema = z
   .strictObject({
     mode: z.enum(['local', 'redis']).default('local'),
     redisFailurePolicy: z.enum(['open', 'closed']).optional(),
-    /** Local mode: max in-memory buckets before LRU eviction (ADR-0032). */
+    /** Local mode (and the fail-open fallback): max in-memory buckets before LRU eviction (ADR-0032). */
     maxBuckets: positiveInt.max(10_000_000).default(100_000),
+    /** Redis tuning; the connection URL itself comes only from REDIS_URL (ADR-0034). */
+    redis: z
+      .strictObject({
+        commandTimeoutMs: z.int().min(1).max(10_000).default(50),
+        connectTimeoutMs: z.int().min(1).max(60_000).default(2000),
+      })
+      .prefault({}),
   })
   .transform((value, ctx) => {
-    if (value.mode === 'local') return { mode: 'local' as const, maxBuckets: value.maxBuckets };
+    if (value.mode === 'local') {
+      return { mode: 'local' as const, maxBuckets: value.maxBuckets, redis: value.redis };
+    }
     if (value.redisFailurePolicy === undefined) {
       ctx.addIssue({
         code: 'custom',
         path: ['redisFailurePolicy'],
         message:
-          'is required when mode is "redis"; choose "open" (allow traffic) or "closed" (reject traffic) when Redis is unavailable (ADR-0005)',
+          'is required when mode is "redis"; choose "open" (fall back to per-instance limits) or "closed" (reject with 503) when Redis is unavailable (ADR-0005, ADR-0034)',
       });
       return z.NEVER;
     }
@@ -160,6 +169,7 @@ const rateLimitSchema = z
       mode: 'redis' as const,
       redisFailurePolicy: value.redisFailurePolicy,
       maxBuckets: value.maxBuckets,
+      redis: value.redis,
     };
   })
   .prefault({});

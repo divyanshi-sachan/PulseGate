@@ -16,5 +16,11 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json"
+  },
+  "dependencies": {
+    "ioredis": "6.0.0"
+  },
+  "devDependencies": {
+    "@pulsegate/testing": "workspace:*"
   }
 }

@@ -34,7 +34,11 @@ try {
   throw error;
 }
 
-const gateway = createGateway(config, clients === undefined ? {} : { clients });
+const redisUrl = process.env['REDIS_URL'];
+const gateway = createGateway(config, {
+  ...(clients === undefined ? {} : { clients }),
+  ...(redisUrl === undefined ? {} : { redisUrl }),
+});
 await gateway.start();
 
 for (const signal of ['SIGTERM', 'SIGINT'] as const) {

@@ -7,7 +7,14 @@ import {
   type ClientsConfig,
   type GatewayConfig,
 } from '@pulsegate/config';
-import { LocalTokenBucketLimiter, type RateLimiter } from '@pulsegate/rate-limiter';
+import {
+  LocalTokenBucketLimiter,
+  RateLimiterUnavailableError,
+  RedisTokenBucketLimiter,
+  ResilientRateLimiter,
+  type RateLimiter,
+} from '@pulsegate/rate-limiter';
+import { Redis } from 'ioredis';
 import { CircuitBreakerRegistry } from '@pulsegate/reliability';
 import { GatewayError, isGatewayError } from '@pulsegate/shared';
 import fastify, {
@@ -42,6 +49,8 @@ export interface GatewayOptions {
   random?: () => number;
   /** Clock for circuit breakers (default performance.now); fake in tests. */
   breakerClock?: () => number;
+  /** Redis connection URL, from the REDIS_URL env var; required when rateLimit.mode is "redis" (ADR-0034). */
+  redisUrl?: string;
 }
 
 export interface Gateway {
@@ -76,6 +85,8 @@ interface RequestOutcome {
   errorCode?: string;
   /** Upstream attempts made, including retries (ADR-0033). */
   attempts?: number;
+  /** "degraded" when a fail-open local fallback decided (ADR-0034). */
+  rateLimitMode?: string;
 }
 
 /** How often full buckets are swept from the local limiter (ADR-0032). */
@@ -212,12 +223,25 @@ function buildPublicServer(
       // Per route and caller: client id when authenticated, otherwise the resolved client IP (ADR-0032).
       const subject =
         identity === undefined ? `ip:${address.clientIp}` : `client:${identity.clientId}`;
-      const decision = await limiter.consume(`${match.route.id}:${subject}`, match.route.rateLimit);
-      const rateHeaders = {
+      let decision;
+      try {
+        decision = await limiter.consume(`${match.route.id}:${subject}`, match.route.rateLimit);
+      } catch (error) {
+        if (!(error instanceof RateLimiterUnavailableError)) throw error;
+        // Fail-closed: the shared limiter can't decide (ADR-0034).
+        void reply.header('retry-after', '1');
+        throw new GatewayError('RATE_LIMITER_UNAVAILABLE', { cause: error });
+      }
+      const rateHeaders: Record<string, string> = {
         'x-ratelimit-limit': String(decision.limit),
         'x-ratelimit-remaining': String(decision.remaining),
         'x-ratelimit-reset': String(Math.ceil(decision.resetAfterMs / 1000)),
       };
+      if (decision.degraded === true) {
+        // Fail-open fallback: per-instance budget while Redis is unavailable (ADR-0034).
+        rateHeaders['x-ratelimit-mode'] = 'degraded';
+        outcome.rateLimitMode = 'degraded';
+      }
       void reply.headers(rateHeaders);
       if (!decision.allowed) {
         void reply.header(
@@ -267,7 +291,11 @@ function buildPublicServer(
       outcome.errorCode = gatewayError.code;
       if (gatewayError instanceof AuthenticationError) outcome.authFailure = gatewayError.reason;
       // CIRCUIT_OPEN is an expected rejection: no upstream was called (ADR-0033).
-      const upstreamFailed = gatewayError.status >= 502 && gatewayError.code !== 'CIRCUIT_OPEN';
+      // Gateway-side 503s are logged once per state change elsewhere, not per request.
+      const upstreamFailed =
+        gatewayError.status >= 502 &&
+        gatewayError.code !== 'CIRCUIT_OPEN' &&
+        gatewayError.code !== 'RATE_LIMITER_UNAVAILABLE';
       if (gatewayError.code === 'INTERNAL_ERROR' || upstreamFailed) {
         request.log.warn(
           {
@@ -299,6 +327,7 @@ function buildPublicServer(
         errorCode: outcome?.errorCode,
         authFailure: outcome?.authFailure,
         attempts: outcome?.attempts,
+        rateLimitMode: outcome?.rateLimitMode,
       },
       'request completed',
     );
@@ -308,28 +337,114 @@ function buildPublicServer(
   return app;
 }
 
-function buildOperationsServer(options: GatewayOptions, isReady: () => boolean) {
+function buildOperationsServer(options: GatewayOptions, isReady: () => Promise<boolean>) {
   const app = fastify(baseOptions(options));
   app.get('/health', () => ({ status: 'ok' }));
-  app.get('/ready', (_request, reply) =>
-    isReady() ? { status: 'ready' } : reply.code(503).send({ status: 'not_ready' }),
+  app.get('/ready', async (_request, reply) =>
+    (await isReady()) ? { status: 'ready' } : reply.code(503).send({ status: 'not_ready' }),
   );
   return app;
 }
 
-export function createGateway(config: GatewayConfig, options: GatewayOptions = {}): Gateway {
-  assertClientsForAuth(config, options.clients, 'clients file');
-  if (config.rateLimit.mode === 'redis' && options.limiter === undefined) {
+/**
+ * Waits (bounded by connectTimeoutMs) for the first Redis connection, so a fresh instance doesn't
+ * reject its first requests. If Redis isn't up in time, startup continues and the failure policy
+ * and readiness take over (ADR-0034).
+ */
+async function waitForRedis(
+  redis: Redis,
+  config: GatewayConfig,
+  log: FastifyBaseLogger,
+): Promise<void> {
+  if (redis.status === 'ready') return;
+  const timeoutMs = config.rateLimit.redis.connectTimeoutMs;
+  const connected = await new Promise<boolean>((resolve) => {
+    const timer = setTimeout(() => {
+      redis.off('ready', onReady);
+      resolve(false);
+    }, timeoutMs);
+    const onReady = () => {
+      clearTimeout(timer);
+      resolve(true);
+    };
+    redis.once('ready', onReady);
+  });
+  if (!connected) {
+    log.warn(
+      { connectTimeoutMs: timeoutMs },
+      'redis not reachable at startup; continuing with the configured failure policy',
+    );
+  }
+}
+
+interface RedisLimiterParts {
+  redis: Redis;
+  limiter: ResilientRateLimiter;
+}
+
+/** Builds the Redis client and the failure-policy wrapper (ADR-0034). */
+function buildRedisLimiter(
+  config: GatewayConfig,
+  redisUrl: string | undefined,
+  logRef: { current?: FastifyBaseLogger },
+): RedisLimiterParts | undefined {
+  const rateLimit = config.rateLimit;
+  if (rateLimit.mode !== 'redis') return undefined;
+  if (redisUrl === undefined || redisUrl === '') {
     throw new ConfigError([
-      { path: 'rateLimit.mode', message: '"redis" is not implemented yet (Phase 4); use "local"' },
+      {
+        path: 'rateLimit.mode',
+        message: 'is "redis", so the REDIS_URL environment variable must be set (ADR-0034)',
+      },
     ]);
   }
+  // Only host:port is ever logged; the URL may contain credentials.
+  const target = new URL(redisUrl).host;
+  const redis = new Redis(redisUrl, {
+    commandTimeout: rateLimit.redis.commandTimeoutMs,
+    connectTimeout: rateLimit.redis.connectTimeoutMs,
+    // Fail fast while disconnected instead of queueing commands behind a dead connection.
+    enableOfflineQueue: false,
+    maxRetriesPerRequest: 1,
+    retryStrategy: (times) => Math.min(times * 100, 2000),
+  });
+  // Connection errors surface through health changes below; an unhandled 'error' event would crash.
+  redis.on('error', (error: Error) => {
+    logRef.current?.debug({ redis: target, err: error.message }, 'redis connection error');
+  });
+  const limiter = new ResilientRateLimiter({
+    primary: new RedisTokenBucketLimiter(redis),
+    policy: rateLimit.redisFailurePolicy,
+    fallback: new LocalTokenBucketLimiter({ maxBuckets: rateLimit.maxBuckets }),
+    onHealthChange: (healthy, error) => {
+      if (healthy) logRef.current?.info({ redis: target }, 'redis rate limiter recovered');
+      else {
+        logRef.current?.warn(
+          {
+            redis: target,
+            policy: rateLimit.redisFailurePolicy,
+            err: error instanceof Error ? error.message : String(error),
+          },
+          'redis rate limiter unavailable',
+        );
+      }
+    },
+  });
+  return { redis, limiter };
+}
+
+export function createGateway(config: GatewayConfig, options: GatewayOptions = {}): Gateway {
+  assertClientsForAuth(config, options.clients, 'clients file');
+  // Loggers exist only once the public server is built; these callbacks run later.
+  const logRef: { current?: FastifyBaseLogger } = {};
+  const redisParts =
+    options.limiter === undefined ? buildRedisLimiter(config, options.redisUrl, logRef) : undefined;
   const limiter =
-    options.limiter ?? new LocalTokenBucketLimiter({ maxBuckets: config.rateLimit.maxBuckets });
+    options.limiter ??
+    redisParts?.limiter ??
+    new LocalTokenBucketLimiter({ maxBuckets: config.rateLimit.maxBuckets });
   const upstreams = new UpstreamRegistry(config.upstreams);
   let ready = false;
-  // The registry logs through the public server's logger, which exists only after it is built.
-  const logRef: { current?: FastifyBaseLogger } = {};
   const breakers = new CircuitBreakerRegistry(config.upstreams, {
     ...(options.breakerClock === undefined ? {} : { now: options.breakerClock }),
     onTransition: (upstreamId, transition) => {
@@ -340,11 +455,18 @@ export function createGateway(config: GatewayConfig, options: GatewayOptions = {
   logRef.current = publicServer.log;
 
   let lastLruEvictions = 0;
-  const sweeper =
+  // Local buckets: the limiter itself, or the fail-open fallback behind Redis (ADR-0032, ADR-0034).
+  const localBuckets =
     limiter instanceof LocalTokenBucketLimiter
+      ? limiter
+      : limiter instanceof ResilientRateLimiter
+        ? limiter.fallback
+        : undefined;
+  const sweeper =
+    localBuckets !== undefined
       ? setInterval(() => {
-          limiter.sweep();
-          const { evictedLru, buckets, maxBuckets } = limiter.stats();
+          localBuckets.sweep();
+          const { evictedLru, buckets, maxBuckets } = localBuckets.stats();
           if (evictedLru > lastLruEvictions) {
             publicServer.log.warn(
               {
@@ -358,7 +480,21 @@ export function createGateway(config: GatewayConfig, options: GatewayOptions = {
           }
         }, options.sweepIntervalMs ?? SWEEP_INTERVAL_MS).unref()
       : undefined;
-  const operations = buildOperationsServer(options, () => ready);
+  // Readiness (ADR-0030, ADR-0034): with fail-closed Redis, actively ping it on every probe, so a
+  // drained instance notices recovery even though it receives no traffic.
+  const isReady = async (): Promise<boolean> => {
+    if (!ready) return false;
+    if (redisParts === undefined || config.rateLimit.mode !== 'redis') return true;
+    if (config.rateLimit.redisFailurePolicy === 'open') return true;
+    try {
+      // ping() resolves only with PONG and rejects on timeout or disconnect.
+      await redisParts.redis.ping();
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  const operations = buildOperationsServer(options, isReady);
   let closing: Promise<ShutdownResult> | undefined;
 
   async function shutdown(): Promise<ShutdownResult> {
@@ -382,6 +518,11 @@ export function createGateway(config: GatewayConfig, options: GatewayOptions = {
     }
     await (state.forced ? upstreams.destroy() : upstreams.close());
     await operations.close();
+    if (redisParts !== undefined) {
+      await redisParts.redis.quit().catch(() => {
+        redisParts.redis.disconnect();
+      });
+    }
     return { forced: state.forced };
   }
 
@@ -389,6 +530,7 @@ export function createGateway(config: GatewayConfig, options: GatewayOptions = {
     public: publicServer,
     operations,
     async start() {
+      if (redisParts !== undefined) await waitForRedis(redisParts.redis, config, publicServer.log);
       await operations.listen({ host: config.operations.host, port: config.operations.port });
       await publicServer.listen({ host: config.server.host, port: config.server.port });
       ready = true;

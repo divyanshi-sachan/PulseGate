@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { GATEWAY_ERRORS, GatewayError, isGatewayError, type GatewayErrorCode } from './index.ts';
 
 describe('GATEWAY_ERRORS', () => {
-  it('maps every code to the status recorded in ADR-0018', () => {
+  it('maps every code to the status recorded in ADR-0018 and ADR-0034', () => {
     const expected: Record<GatewayErrorCode, number> = {
       BAD_REQUEST: 400,
       AUTHENTICATION_FAILED: 401,
@@ -16,6 +16,7 @@ describe('GATEWAY_ERRORS', () => {
       UPSTREAM_RESPONSE_TOO_LARGE: 502,
       CIRCUIT_OPEN: 503,
       UPSTREAM_TIMEOUT: 504,
+      RATE_LIMITER_UNAVAILABLE: 503,
     };
     const actual = Object.fromEntries(
       Object.entries(GATEWAY_ERRORS).map(([code, { status }]) => [code, status]),

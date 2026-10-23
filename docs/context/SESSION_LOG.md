@@ -162,3 +162,15 @@ Format: date · goal · what changed · decisions (ADR links) · open threads.
   abort signal (which includes the client signal) to the body. The explicit discard stays as defense in depth; the streaming-503
   test fails only when both mechanisms are removed. My first leak test used a fully received 4-byte body, where an idle pooled
   keep-alive socket looked like a leak. I fixed the test to use a still-streaming body.
+
+## 2026-10-23 · Phase 4: Redis-backed distributed rate limiting
+- **Decisions (user, all recommended):** `REDIS_URL` env + tuning in config; fail-open = degraded local fallback with
+  `X-RateLimit-Mode: degraded`; fail-closed = 503 `RATE_LIMITER_UNAVAILABLE` + not ready; Testcontainers with skip/`REQUIRE_REDIS_TESTS`.
+  See [ADR-0034](../adr/0034-redis-rate-limiting.md); Claude-chosen details are marked there.
+- **Changed:** rate-limiter adds Lua script, `RedisTokenBucketLimiter`, `ResilientRateLimiter`; new error code; config `rateLimit.redis`;
+  gateway Redis client, readiness ping, startup wait, shutdown quit, degraded header; new `packages/testing` (Redis container, TcpProxy);
+  `allowBuilds` denies three install scripts; distributed config + Compose override; Dockerfile manifests; docs.
+- **Verified:** real-Redis suites (script, atomicity, two instances, both policies via cut/stall proxy, boot without Redis); mutation checks
+  (non-atomic JS, no fallback, readiness) all caught; Docker: exactly 30/100 across two instances, outage → 503 + not ready, recovery.
+- **Mistakes caught:** start() didn't wait for Redis (6/60 503s); tests initially shared one bucket key; skip warning swallowed by Vitest;
+  a zsh variable-as-command slip made one Docker run do nothing (re-run correctly).

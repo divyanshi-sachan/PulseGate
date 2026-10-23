@@ -2,3 +2,11 @@ packages:
   - 'apps/*'
   - 'packages/*'
   - 'examples/*'
+
+# Install scripts are denied unless needed (supply-chain hygiene). These come from testcontainers'
+# dependencies and are not needed with a local Docker socket: ssh2/cpu-features only serve SSH Docker
+# hosts, and protobufjs's script is a version notice (ADR-0034).
+allowBuilds:
+  cpu-features: false
+  protobufjs: false
+  ssh2: false

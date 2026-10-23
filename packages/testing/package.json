@@ -1,0 +1,20 @@
+{
+  "name": "@pulsegate/testing",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Test-only helpers: real Redis via Testcontainers and a fault-injecting TCP proxy",
+  "type": "module",
+  "exports": {
+    ".": {
+      "@pulsegate/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json"
+  }
+}

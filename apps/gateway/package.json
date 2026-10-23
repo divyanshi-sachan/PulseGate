@@ -25,6 +25,10 @@
     "@pulsegate/reliability": "workspace:*",
     "@pulsegate/shared": "workspace:*",
     "fastify": "5.12.7",
+    "ioredis": "6.0.0",
     "undici": "8.12.3"
+  },
+  "devDependencies": {
+    "@pulsegate/testing": "workspace:*"
   }
 }

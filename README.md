@@ -3,8 +3,8 @@
 A lightweight, self-hostable API gateway focused on reliability: routing, API-key auth, rate limiting,
 caching, timeouts, bounded retries and circuit breakers, with observable, explainable behavior.
 
-**Status:** Phases 1–3 complete (proxy, API-key auth, local rate limiting, bounded retries, per-upstream circuit
-breakers). Redis-backed limiting, caching and metrics are next. See [docs/context/STATE.md](docs/context/STATE.md) for the current state and [docs/adr/](docs/adr/README.md)
+**Status:** Phases 1–4 complete (proxy, API-key auth, local and Redis-backed distributed rate limiting, bounded
+retries, per-upstream circuit breakers). Caching and metrics are next. See [docs/context/STATE.md](docs/context/STATE.md) for the current state and [docs/adr/](docs/adr/README.md)
 for the design decisions.
 
 ## Quickstart (Docker)
@@ -36,6 +36,14 @@ for i in 1 2 3 4; do curl -s -o /dev/null -w '%{http_code} ' "http://localhost:8
 # 502 502 502 503: the payments circuit breaker opened (CIRCUIT_OPEN, Retry-After: 10)
 ```
 
+### Distributed mode (two gateways, one Redis budget)
+
+```bash
+pnpm dev:distributed   # gateway on :8080 and :8081, Redis behind both
+for i in $(seq 1 100); do curl -s -o /dev/null -w '%{http_code}\n' "http://localhost:$((8080 + i % 2))/api/payments/$i" & done | sort | uniq -c
+# exactly 30 × 200 across both instances (capacity 30), the rest 429
+```
+
 Create real keys with `pnpm keygen --client <id>`. It prints the key once plus the SHA-256 digest to put in
 your clients file (see [config/clients.example.yaml](config/clients.example.yaml)).
 
@@ -62,6 +70,7 @@ Configuration is validated at startup; every option and default is documented in
 | `packages/config` | Zod config schema and loader |
 | `packages/rate-limiter` | Token-bucket `RateLimiter` and in-memory implementation |
 | `packages/reliability` | Circuit breakers and retry policy |
+| `packages/testing` | Test-only helpers: real Redis (Testcontainers), fault-injecting TCP proxy |
 | `packages/shared` | Normalized error registry |
 | `examples/mock-upstreams` | Mock upstream with fault injection |
 | `docs/adr` | Architecture decision records |

@@ -48,6 +48,14 @@ describe('loadConfigFile', () => {
     });
   });
 
+  it('loads the committed distributed example config', async () => {
+    const path = fileURLToPath(
+      new URL('../../../config/routes.distributed.example.yaml', import.meta.url),
+    );
+    const config = await loadConfigFile(path);
+    expect(config.rateLimit).toMatchObject({ mode: 'redis', redisFailurePolicy: 'closed' });
+  });
+
   it('loads YAML and JSON files', async () => {
     const yamlPath = join(dir, 'gateway.yml');
     const jsonPath = join(dir, 'gateway.json');

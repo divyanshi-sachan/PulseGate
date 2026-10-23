@@ -15,6 +15,8 @@ export interface RateLimitDecision {
   retryAfterMs: number;
   /** Time until the bucket is full again (for X-RateLimit-Reset). */
   resetAfterMs: number;
+  /** Set when a fail-open fallback decided instead of the shared limiter (ADR-0034). */
+  degraded?: boolean;
 }
 
 /** Strategy interface: local and Redis implementations are interchangeable (ADR-0004, ADR-0005). */

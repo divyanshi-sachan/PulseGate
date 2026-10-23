@@ -87,6 +87,7 @@ namespaces or parameter properties (`erasableSyntaxOnly`). Existing: `packages/s
 `packages/config` (Zod schema + loader; defaults in ADR-0026, documented in `config/routes.example.yaml`).
 `packages/rate-limiter` (RateLimiter strategy + LocalTokenBucketLimiter, ADR-0032),
 `packages/reliability` (CircuitBreaker + registry, retry policy; ADR-0033),
+`packages/testing` (dev-only: Testcontainers Redis + fault-injecting TcpProxy),
 `apps/gateway` (Fastify listeners; validate → match → ApiKeyAuthenticator → rate limit → ProxyService executor with
 breaker permits and retries; ADR-0028, 0031, 0033). New workspace packages must also be added to the Dockerfile's manifest COPY list.
 Clients file (`PULSEGATE_CLIENTS`, example `config/clients.example.yaml`) holds SHA-256 key digests only.
@@ -99,6 +100,7 @@ When changing config: update schema, ADR-0026, the example YAML and the defaults
 
 - Strict TypeScript; no `any` in public interfaces. Zod schema first, `z.infer` for types.
 - Inject clocks (`now()`/monotonic) and randomness (jitter) — **tests use fake clocks, never sleeps.**
+  Exception: real-Redis tests use the Redis server clock, so they use short real waits (ADR-0034).
 - Every component ships with unit tests covering its failure behavior (see system_design §15 table).
 - Integration tests use real Redis (test container) and mock upstreams that can delay/reset/5xx.
 - Bound everything: maps, queues, retries, concurrency, body sizes. Enforce size limits while streaming, never by buffering.
@@ -122,6 +124,8 @@ pnpm keygen --client <id>   # new API key (shown once) + SHA-256 snippet for the
 pnpm --filter @pulsegate/gateway dev   # run gateway from source (PULSEGATE_CONFIG, LOG_LEVEL)
 pnpm dev:up           # docker compose up --build: gateway :8080 + orders/payments mocks (ADR-0029)
 pnpm dev:down         # docker compose down
+pnpm dev:distributed  # + Redis and a second gateway on :8081 sharing one budget (ADR-0034)
+REQUIRE_REDIS_TESTS=1 pnpm test   # fail instead of skipping when Docker/Redis is unavailable (use in CI)
 ```
 
 ## Git workflow

@@ -1,10 +1,10 @@
 # Project State
 
-_Last updated: 2026-10-23 (Phase 3 complete)_
+_Last updated: 2026-10-23 (Phase 4 complete)_
 
 ## Current phase
-**Phase 3 — Reliability middleware: complete** (verified in Docker). Next is **Phase 4 — Redis-backed distributed
-rate limiting** (technical_implementation.md §14).
+**Phase 4 — Redis-backed distributed rate limiting: complete** (exit criterion verified in Docker). Next is
+**Phase 5 — Caching and observability** (technical_implementation.md §14).
 
 ## Done
 - Product, system-design and implementation specs written.
@@ -25,17 +25,19 @@ rate limiting** (technical_implementation.md §14).
 - Phase 2: clients file + `pnpm keygen` (ADR-0031), `ApiKeyAuthenticator`, `packages/rate-limiter` with
   `LocalTokenBucketLimiter`, rate-limit headers and 429 (ADR-0032); review hardening tests added. `pnpm check`: 183 tests.
 - Phase 3: `packages/reliability` (breaker State machine with permits, retry policy), executor in ProxyService
-  (attempt timeouts, full-jitter retries for GET/HEAD/OPTIONS, 503 CIRCUIT_OPEN), normalized parser errors (ADR-0033). 223 tests.
+  (attempt timeouts, full-jitter retries for GET/HEAD/OPTIONS, 503 CIRCUIT_OPEN), normalized parser errors (ADR-0033). 223 tests; review added retained-response and socket tests (229).
+- Phase 4: Lua token bucket on Redis server time, `ResilientRateLimiter` (fail-closed 503 / fail-open degraded local),
+  Redis readiness ping, startup wait, `packages/testing`, `pnpm dev:distributed` (ADR-0034).
 
-## Next up (Phase 4 — Redis-backed distributed rate limiting, technical_implementation.md §14)
-0. Review the Claude-chosen ADRs: 0026 (config defaults), 0028 (gateway choices), 0033 details (Retry-After on CIRCUIT_OPEN,
-   held retryable responses, body-end settlement).
-1. Decide Redis connection config (URL via env, TLS, timeouts) and how `redisFailurePolicy` behaves per request → ADR.
-2. `RedisTokenBucketLimiter`: one Lua script, Redis server TIME, key `pulsegate:rl:v1:{...}`, bounded expiry (ADR-0005).
-3. Readiness includes Redis when mode is "redis" (ADR-0030); Redis in Docker Compose; two gateway instances sharing a budget.
-4. Integration tests with real Redis: atomicity under concurrency, shared budget across instances, outage per failure policy.
+## Next up (Phase 5 — Caching and observability, technical_implementation.md §14)
+0. Review Claude-chosen details: ADR-0026, 0028, 0033 (Retry-After on CIRCUIT_OPEN, held responses, body-end settlement),
+   0034 (PEXPIRE margin, client options, startup wait, readiness ping).
+1. Decide Q6 (caching on authenticated routes: client-partitioned keys vs shared opt-in) and Q13 (request dedup, P1).
+2. Bounded in-memory response cache (ADR-0009): eligibility, key composition, TTL, size limits, hit/miss/eviction counters.
+3. Prometheus `/metrics` on the operations listener (tech_impl §11 names, bounded labels); hook into the request log points.
+4. Basic React dashboard reading metrics (may slip to its own step).
 
-Exit criteria: two gateway instances enforce a shared budget under concurrent traffic.
+Exit criteria: dashboard data matches the gateway's observed behavior in integration tests.
 
 ## Blockers / risks
 - Later phases still need Q3, Q6, Q8, Q9, Q11 (see OPEN_QUESTIONS.md).

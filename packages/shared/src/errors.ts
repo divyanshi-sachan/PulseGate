@@ -1,5 +1,5 @@
 /**
- * Normalized gateway error registry (ADR-0011, extended by ADR-0017, 0018, 0020, 0023, 0024).
+ * Normalized gateway error registry (ADR-0011, extended by ADR-0017, 0018, 0020, 0023, 0024, 0034).
  * Every gateway-generated error response uses one of these codes and the JSON shape in {@link GatewayErrorBody}.
  */
 export const GATEWAY_ERRORS = {
@@ -15,6 +15,7 @@ export const GATEWAY_ERRORS = {
   UPSTREAM_RESPONSE_TOO_LARGE: { status: 502, message: 'Upstream response too large' },
   CIRCUIT_OPEN: { status: 503, message: 'Upstream temporarily unavailable' },
   UPSTREAM_TIMEOUT: { status: 504, message: 'Upstream timed out' },
+  RATE_LIMITER_UNAVAILABLE: { status: 503, message: 'Rate limiter temporarily unavailable' },
 } as const satisfies Record<string, { status: number; message: string }>;
 
 export type GatewayErrorCode = keyof typeof GATEWAY_ERRORS;
