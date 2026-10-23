@@ -38,6 +38,7 @@ Each refill-and-consume runs synchronously, so concurrent requests can't double-
   | 2xx/3xx/4xx/5xx from the upstream | yes |
   | 413 `PAYLOAD_TOO_LARGE`, 502 `UPSTREAM_UNAVAILABLE` / `UPSTREAM_RESPONSE_TOO_LARGE`, 504 `UPSTREAM_TIMEOUT` | yes (decided after the limit check) |
   | 429 `RATE_LIMIT_EXCEEDED` | yes, plus `Retry-After` |
+  | 503 `CIRCUIT_OPEN` | yes, plus `Retry-After` (ADR-0033) |
   | 401 `AUTHENTICATION_FAILED` | **no** (before the limit check) |
   | 400 / 404 / 405 | **no** (before route resolution or the limit check) |
 

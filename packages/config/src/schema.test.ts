@@ -208,12 +208,14 @@ describe('circuit breaker (ADR-0015, ADR-0024)', () => {
       failureThreshold: 5,
       openDurationMs: 5000,
       halfOpenMaxRequests: 1,
+      halfOpenSuccessThreshold: 1,
       failureStatuses: [500, 502, 503, 504],
     });
     expect(config.upstreams[1]?.circuitBreaker).toEqual({
       failureThreshold: 3,
       openDurationMs: 5000,
       halfOpenMaxRequests: 1,
+      halfOpenSuccessThreshold: 1,
       failureStatuses: [500, 502, 503, 504],
     });
   });
@@ -239,6 +241,47 @@ describe('circuit breaker (ADR-0015, ADR-0024)', () => {
       withInput((c) => (c.upstreams[0]['circuitBreaker'] = { failureThreshold: 0 })),
       'upstreams[0] ("orders-service").circuitBreaker.failureThreshold',
       /1/,
+    );
+  });
+});
+
+describe('Phase 3 settings (ADR-0033)', () => {
+  it('defaults halfOpenSuccessThreshold to 1 and merges per-upstream overrides', () => {
+    const config = parseConfig(
+      withInput((c) => {
+        c['circuitBreaker'] = { halfOpenMaxRequests: 3 };
+        c.upstreams[0]['circuitBreaker'] = { halfOpenSuccessThreshold: 3 };
+      }),
+    );
+    expect(config.circuitBreaker.halfOpenSuccessThreshold).toBe(1);
+    expect(config.upstreams[0]?.circuitBreaker).toMatchObject({
+      halfOpenMaxRequests: 3,
+      halfOpenSuccessThreshold: 3,
+    });
+  });
+
+  it('rejects a success threshold above the probe limit after merging', () => {
+    expectIssue(
+      withInput((c) => (c.upstreams[0]['circuitBreaker'] = { halfOpenSuccessThreshold: 2 })),
+      'upstreams[0] ("orders-service").circuitBreaker.halfOpenSuccessThreshold',
+      /2 exceeds halfOpenMaxRequests \(1\).*could never close/,
+    );
+    expectIssue(
+      withInput((c) => (c['circuitBreaker'] = { halfOpenSuccessThreshold: 2 })),
+      'circuitBreaker.halfOpenSuccessThreshold',
+      /exceeds halfOpenMaxRequests/,
+    );
+  });
+
+  it('accepts attemptTimeoutMs within timeoutMs and rejects it above', () => {
+    expect(
+      parseConfig(withInput((c) => (c.routes[0]['attemptTimeoutMs'] = 500))).routes[0]
+        ?.attemptTimeoutMs,
+    ).toBe(500);
+    expectIssue(
+      withInput((c) => (c.routes[0]['attemptTimeoutMs'] = 5000)),
+      'routes[0] ("get-orders").attemptTimeoutMs',
+      /must not exceed timeoutMs \(3000\)/,
     );
   });
 });

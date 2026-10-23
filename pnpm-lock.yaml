@@ -44,6 +44,9 @@ importers:
       '@pulsegate/rate-limiter':
         specifier: workspace:*
         version: link:../../packages/rate-limiter
+      '@pulsegate/reliability':
+        specifier: workspace:*
+        version: link:../../packages/reliability
       '@pulsegate/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -66,6 +69,8 @@ importers:
         version: 4.6.7
 
   packages/rate-limiter: {}
+
+  packages/reliability: {}
 
   packages/shared: {}
 

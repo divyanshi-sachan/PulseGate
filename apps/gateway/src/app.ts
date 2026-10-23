@@ -8,6 +8,7 @@ import {
   type GatewayConfig,
 } from '@pulsegate/config';
 import { LocalTokenBucketLimiter, type RateLimiter } from '@pulsegate/rate-limiter';
+import { CircuitBreakerRegistry } from '@pulsegate/reliability';
 import { GatewayError, isGatewayError } from '@pulsegate/shared';
 import fastify, {
   LogController,
@@ -23,7 +24,7 @@ import {
   type ClientIdentity,
 } from './auth/authenticator.ts';
 import { resolveClientAddress, TrustedProxies } from './proxy/client-address.ts';
-import { ClientAbortedError, ProxyService } from './proxy/proxy-service.ts';
+import { CircuitOpenError, ClientAbortedError, ProxyService } from './proxy/proxy-service.ts';
 import { UpstreamRegistry } from './proxy/upstream-registry.ts';
 import { parseRequestTarget } from './routing/request-target.ts';
 import { MethodNotAllowedError, RouteRegistry } from './routing/route-registry.ts';
@@ -37,6 +38,10 @@ export interface GatewayOptions {
   limiter?: RateLimiter;
   /** Local-limiter sweep interval (default 60 s); shorter in tests. */
   sweepIntervalMs?: number;
+  /** Backoff jitter source (default Math.random); deterministic in tests (ADR-0033). */
+  random?: () => number;
+  /** Clock for circuit breakers (default performance.now); fake in tests. */
+  breakerClock?: () => number;
 }
 
 export interface Gateway {
@@ -69,6 +74,8 @@ interface RequestOutcome {
   clientId?: string;
   authFailure?: string;
   errorCode?: string;
+  /** Upstream attempts made, including retries (ADR-0033). */
+  attempts?: number;
 }
 
 /** How often full buckets are swept from the local limiter (ADR-0032). */
@@ -76,6 +83,9 @@ const SWEEP_INTERVAL_MS = 60_000;
 
 function sendError(reply: FastifyReply, error: GatewayError, requestId: string): FastifyReply {
   if (error instanceof MethodNotAllowedError) void reply.header('allow', error.allow);
+  if (error instanceof CircuitOpenError) {
+    void reply.header('retry-after', String(error.retryAfterSeconds));
+  }
   return reply
     .code(error.status)
     .header('content-type', 'application/json; charset=utf-8')
@@ -85,6 +95,8 @@ function sendError(reply: FastifyReply, error: GatewayError, requestId: string):
 
 /** Writes a normalized 400 straight to a socket Node will not hand to Fastify (ADR-0023). */
 function rejectSocket(socket: Duplex, message: string, log: FastifyBaseLogger): void {
+  // The peer may already be gone (e.g. a reset during parsing).
+  if (!socket.writable) return;
   const requestId = newRequestId();
   const body = JSON.stringify(
     new GatewayError('BAD_REQUEST', { publicMessage: message }).toBody(requestId),
@@ -127,16 +139,27 @@ function buildPublicServer(
   options: GatewayOptions,
   upstreams: UpstreamRegistry,
   limiter: RateLimiter,
+  breakers: CircuitBreakerRegistry,
 ) {
   const authenticator =
     options.clients === undefined ? undefined : new ApiKeyAuthenticator(options.clients);
   const routes = new RouteRegistry(config.routes);
   const trusted = new TrustedProxies(config.server.trustedProxies);
-  const proxy = new ProxyService(config.server.limits);
+  const proxy = new ProxyService({
+    limits: config.server.limits,
+    breakers,
+    ...(options.random === undefined ? {} : { random: options.random }),
+  });
   const outcomes = new WeakMap<FastifyRequest, RequestOutcome>();
 
   const app = fastify({
     ...baseOptions(options),
+    // Malformed HTTP that Node's parser rejects never reaches a route; answer in the normalized shape
+    // (ADR-0011) instead of Fastify's default body.
+    clientErrorHandler: (error, socket) => {
+      rejectSocket(socket, 'Malformed HTTP request', app.log);
+      app.log.debug({ err: error }, 'HTTP parser rejected request');
+    },
     frameworkErrors: (error, request, reply) => {
       outcomes.set(request, { errorCode: 'BAD_REQUEST' });
       request.log.debug({ err: error }, 'framework rejected request');
@@ -214,6 +237,9 @@ function buildPublicServer(
         forwardedFor: address.forwardedFor,
         viaTrustedProxy: address.viaTrustedProxy,
         clientSignal: client.signal,
+        onAttempt: () => {
+          outcome.attempts = (outcome.attempts ?? 0) + 1;
+        },
         onBodyError: (error) => {
           const code = isGatewayError(error) ? error.code : 'UPSTREAM_UNAVAILABLE';
           outcome.errorCode = code;
@@ -240,7 +266,9 @@ function buildPublicServer(
         : new GatewayError('INTERNAL_ERROR', { cause: error });
       outcome.errorCode = gatewayError.code;
       if (gatewayError instanceof AuthenticationError) outcome.authFailure = gatewayError.reason;
-      if (gatewayError.code === 'INTERNAL_ERROR' || gatewayError.status >= 502) {
+      // CIRCUIT_OPEN is an expected rejection: no upstream was called (ADR-0033).
+      const upstreamFailed = gatewayError.status >= 502 && gatewayError.code !== 'CIRCUIT_OPEN';
+      if (gatewayError.code === 'INTERNAL_ERROR' || upstreamFailed) {
         request.log.warn(
           {
             routeId: outcome.routeId,
@@ -270,6 +298,7 @@ function buildPublicServer(
         durationMs: Math.round(reply.elapsedTime * 100) / 100,
         errorCode: outcome?.errorCode,
         authFailure: outcome?.authFailure,
+        attempts: outcome?.attempts,
       },
       'request completed',
     );
@@ -299,7 +328,16 @@ export function createGateway(config: GatewayConfig, options: GatewayOptions = {
     options.limiter ?? new LocalTokenBucketLimiter({ maxBuckets: config.rateLimit.maxBuckets });
   const upstreams = new UpstreamRegistry(config.upstreams);
   let ready = false;
-  const publicServer = buildPublicServer(config, options, upstreams, limiter);
+  // The registry logs through the public server's logger, which exists only after it is built.
+  const logRef: { current?: FastifyBaseLogger } = {};
+  const breakers = new CircuitBreakerRegistry(config.upstreams, {
+    ...(options.breakerClock === undefined ? {} : { now: options.breakerClock }),
+    onTransition: (upstreamId, transition) => {
+      logRef.current?.warn({ upstreamId, ...transition }, 'circuit breaker state changed');
+    },
+  });
+  const publicServer = buildPublicServer(config, options, upstreams, limiter, breakers);
+  logRef.current = publicServer.log;
 
   let lastLruEvictions = 0;
   const sweeper =

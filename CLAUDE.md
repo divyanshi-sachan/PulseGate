@@ -86,7 +86,9 @@ extending the base, and `src/index.ts` as the only public entry. Relative import
 namespaces or parameter properties (`erasableSyntaxOnly`). Existing: `packages/shared` (error registry),
 `packages/config` (Zod schema + loader; defaults in ADR-0026, documented in `config/routes.example.yaml`).
 `packages/rate-limiter` (RateLimiter strategy + LocalTokenBucketLimiter, ADR-0032),
-`apps/gateway` (Fastify listeners; validate → match → ApiKeyAuthenticator → rate limit → ProxyService; ADR-0028, 0031).
+`packages/reliability` (CircuitBreaker + registry, retry policy; ADR-0033),
+`apps/gateway` (Fastify listeners; validate → match → ApiKeyAuthenticator → rate limit → ProxyService executor with
+breaker permits and retries; ADR-0028, 0031, 0033). New workspace packages must also be added to the Dockerfile's manifest COPY list.
 Clients file (`PULSEGATE_CLIENTS`, example `config/clients.example.yaml`) holds SHA-256 key digests only.
 Unit tests sit next to code in `src/`; socket-level integration tests with mock upstreams in `apps/gateway/test/`.
 `examples/mock-upstreams` (dev/demo upstream with `_delay`/`_status`/`_reset`/`_bytes`/`_failRate` query faults).

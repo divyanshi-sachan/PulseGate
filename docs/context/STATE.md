@@ -1,10 +1,10 @@
 # Project State
 
-_Last updated: 2026-10-23 (Phase 2 complete)_
+_Last updated: 2026-10-23 (Phase 3 complete)_
 
 ## Current phase
-**Phase 2 — Auth and local rate limiting: complete** (verified in Docker). Next is **Phase 3 — Reliability
-middleware** (timeouts already exist; add bounded retries, per-upstream circuit breakers and fault-injection tests).
+**Phase 3 — Reliability middleware: complete** (verified in Docker). Next is **Phase 4 — Redis-backed distributed
+rate limiting** (technical_implementation.md §14).
 
 ## Done
 - Product, system-design and implementation specs written.
@@ -24,17 +24,18 @@ middleware** (timeouts already exist; add bounded retries, per-upstream circuit 
 - Bounded graceful shutdown + readiness scope (ADR-0030); false mid-stream warning fixed. `pnpm check`: 129 tests.
 - Phase 2: clients file + `pnpm keygen` (ADR-0031), `ApiKeyAuthenticator`, `packages/rate-limiter` with
   `LocalTokenBucketLimiter`, rate-limit headers and 429 (ADR-0032); review hardening tests added. `pnpm check`: 183 tests.
+- Phase 3: `packages/reliability` (breaker State machine with permits, retry policy), executor in ProxyService
+  (attempt timeouts, full-jitter retries for GET/HEAD/OPTIONS, 503 CIRCUIT_OPEN), normalized parser errors (ADR-0033). 223 tests.
 
-## Next up (Phase 3 — Reliability middleware, technical_implementation.md §14)
-0. Review the Claude-chosen ADRs: 0026 (config defaults), 0028 (gateway choices).
-1. Decide Q11 (half-open → closed success threshold) and Q3 (breaker state naming).
-2. Retry executor (ADR-0007, 0016): attempts within the deadline, full-jitter backoff (injected random), idempotent methods only,
-   upstream-returned statuses only (ADR-0024).
-3. `CircuitBreaker` + `CircuitBreakerRegistry` (State pattern, ADR-0008/0015/0024): checked before every attempt, 503 `CIRCUIT_OPEN`,
-   transitions logged.
-4. Fault-injection integration tests using `_failRate`/`_reset`/`_delay` upstream modes.
+## Next up (Phase 4 — Redis-backed distributed rate limiting, technical_implementation.md §14)
+0. Review the Claude-chosen ADRs: 0026 (config defaults), 0028 (gateway choices), 0033 details (Retry-After on CIRCUIT_OPEN,
+   held retryable responses, body-end settlement).
+1. Decide Redis connection config (URL via env, TLS, timeouts) and how `redisFailurePolicy` behaves per request → ADR.
+2. `RedisTokenBucketLimiter`: one Lua script, Redis server TIME, key `pulsegate:rl:v1:{...}`, bounded expiry (ADR-0005).
+3. Readiness includes Redis when mode is "redis" (ADR-0030); Redis in Docker Compose; two gateway instances sharing a budget.
+4. Integration tests with real Redis: atomicity under concurrency, shared budget across instances, outage per failure policy.
 
-Exit criteria: an unhealthy upstream can be isolated without crashing the gateway.
+Exit criteria: two gateway instances enforce a shared budget under concurrent traffic.
 
 ## Blockers / risks
 - Later phases still need Q3, Q6, Q8, Q9, Q11 (see OPEN_QUESTIONS.md).

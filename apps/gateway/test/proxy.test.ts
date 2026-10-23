@@ -440,6 +440,25 @@ describe('protocol upgrades (ADR-0023)', () => {
   });
 });
 
+describe('malformed HTTP (ADR-0011)', () => {
+  it('answers parser-level errors in the normalized error shape', async () => {
+    const { upstream, gw } = await setup();
+    const socket = connect(gw.port, '127.0.0.1');
+    await once(socket, 'connect');
+    socket.write('NOT HTTP AT ALL\r\n\r\n');
+    const chunks: Buffer[] = [];
+    for await (const chunk of socket) chunks.push(chunk as Buffer);
+    const raw = Buffer.concat(chunks).toString('utf8');
+    expect(raw.startsWith('HTTP/1.1 400 Bad Request')).toBe(true);
+    const body = JSON.parse(raw.slice(raw.indexOf('\r\n\r\n') + 4)) as {
+      error: { code: string; requestId: string };
+    };
+    expect(body.error.code).toBe('BAD_REQUEST');
+    expect(body.error.requestId).toMatch(/^req_/);
+    expect(upstream.requests).toHaveLength(0);
+  });
+});
+
 describe('listeners (ADR-0022)', () => {
   it('serves health and readiness on the operations listener, not the public one', async () => {
     const { gw } = await setup();

@@ -37,3 +37,4 @@ Accepted ADRs **override** the spec documents where they conflict. Create new on
 | [0030](0030-shutdown-and-readiness.md) | Bounded graceful shutdown and readiness scope | Accepted |
 | [0031](0031-api-clients-and-keys.md) | API clients and keys | Accepted |
 | [0032](0032-local-rate-limiting.md) | Local token-bucket rate limiting | Accepted |
+| [0033](0033-retries-and-breakers.md) | Retry executor and circuit breakers (Phase 3) | Accepted (review details) |

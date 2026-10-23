@@ -1,4 +1,5 @@
 # PulseGate
+
 ## Technical Architecture & Implementation Plan
 
 **Version:** 1.0  
@@ -69,6 +70,7 @@ This is a logical diagram. The first implementation can run as a single gateway 
 ### A. Gateway server
 
 Responsibilities:
+
 - Accept HTTP requests.
 - Match configured routes.
 - Execute the request middleware pipeline.
@@ -81,6 +83,7 @@ It must not contain the implementation details of Redis rate limiting, cache sto
 ### B. Route registry
 
 Responsibilities:
+
 - Load and validate route configuration at startup.
 - Match the incoming HTTP method and path.
 - Resolve the target upstream.
@@ -91,6 +94,7 @@ Initial route configuration is read-only at runtime. Hot reload and database-bac
 ### C. Authentication service
 
 Responsibilities:
+
 - Extract API credentials from the configured header.
 - Validate the credential against a configured client.
 - Produce a trusted client identity.
@@ -102,6 +106,7 @@ For the MVP, API keys can be configured in a secrets file or environment variabl
 ### D. Rate-limiting service
 
 Responsibilities:
+
 - Apply a token-bucket policy to each identified client and route.
 - Support local and Redis-backed implementations behind the same interface.
 - Return an explicit allow/deny decision and remaining capacity.
@@ -110,6 +115,7 @@ Responsibilities:
 ### E. Cache service
 
 Responsibilities:
+
 - Determine whether a request is eligible for caching.
 - Generate a deterministic cache key.
 - Read and write cached responses.
@@ -121,6 +127,7 @@ Start with a bounded in-memory cache. Shared Redis caching is an optional extens
 ### F. Reliability engine
 
 Responsibilities:
+
 - Apply request timeouts.
 - Retry eligible requests within a fixed attempt budget.
 - Maintain circuit-breaker state per upstream.
@@ -132,6 +139,7 @@ Retries and circuit breakers must be independently testable.
 ### G. Observability service
 
 Responsibilities:
+
 - Emit structured request logs.
 - Record latency and outcome metrics.
 - Track rate-limit decisions, cache activity, retries, and breaker transitions.
@@ -140,6 +148,7 @@ Responsibilities:
 ### H. Control plane and dashboard
 
 Responsibilities:
+
 - Display gateway health and aggregate traffic.
 - Show latency, errors, cache performance, and rate-limit activity.
 - Inspect configured routes and policies.
@@ -295,6 +304,7 @@ The interface deliberately hides storage details. Gateway middleware should not 
 ## 5.2 Local token bucket
 
 Each key has:
+
 - Current token balance.
 - Last-refill timestamp.
 - Configured capacity and refill rate.
@@ -311,6 +321,7 @@ Where \(C\) is bucket capacity and \(r\) is the refill rate.
 A request is allowed if at least one token is available; the bucket then consumes one token.
 
 Implementation requirements:
+
 - Use a monotonic clock for elapsed-time calculations where possible.
 - Make token refill and consumption atomic within the JavaScript execution model.
 - Bound the number of stored keys.
@@ -322,6 +333,7 @@ Local mode is fast, but each gateway instance maintains separate state. It is no
 ## 5.3 Redis-backed token bucket
 
 The Redis implementation uses a single Lua script to:
+
 1. Read the bucket state.
 2. Calculate token refill.
 3. Decide whether the request is allowed.
@@ -387,6 +399,7 @@ The MVP can maintain breaker state in memory. Distributed breaker coordination c
 Cache only explicitly eligible responses. Begin with GET requests and successful responses, and enforce response-size limits and TTLs.
 
 Default behavior:
+
 - Do not cache requests with authorization headers unless an explicit safe policy allows it.
 - Do not cache responses marked private or no-store.
 - Respect documented cache-control behavior.
@@ -396,6 +409,7 @@ Default behavior:
 ## 7.2 Cache key
 
 A cache key should incorporate:
+
 - Route identity.
 - HTTP method.
 - Normalized path.
@@ -628,6 +642,7 @@ pulsegate_active_requests
 Use labels such as route ID, status class, outcome, and cache result. Never use API keys, request IDs, raw URLs containing arbitrary identifiers, or user-provided values as Prometheus labels.
 
 The dashboard should initially show:
+
 - Total request volume.
 - Success and error rates.
 - p50/p95/p99 latency.
@@ -655,6 +670,7 @@ The public demo should use mock upstreams and synthetic traffic. It should not a
 ## Unit tests
 
 **Rate limiter**
+
 - Initial bucket capacity.
 - Refill over elapsed time.
 - Token consumption.
@@ -664,6 +680,7 @@ The public demo should use mock upstreams and synthetic traffic. It should not a
 - Redis Lua atomicity under concurrent requests.
 
 **Circuit breaker**
+
 - Closed-to-open transition.
 - Open-state rejection.
 - Half-open recovery.
@@ -671,6 +688,7 @@ The public demo should use mock upstreams and synthetic traffic. It should not a
 - Concurrent half-open request limits.
 
 **Retry and timeout**
+
 - Maximum attempt count.
 - Backoff and jitter bounds.
 - Request deadline enforcement.
@@ -678,6 +696,7 @@ The public demo should use mock upstreams and synthetic traffic. It should not a
 - Cancellation and resource cleanup.
 
 **Cache**
+
 - Cache-key correctness.
 - TTL expiry.
 - Cache bypass rules.
@@ -690,6 +709,7 @@ The public demo should use mock upstreams and synthetic traffic. It should not a
 Use real Redis in a test container to verify distributed rate limiting. Use mock upstream servers that can simulate delays, connection resets, 4xx/5xx responses, and recovery.
 
 Test:
+
 - Two gateway instances sharing one Redis rate-limit budget.
 - Redis outage behavior for each configured failure policy.
 - Circuit-breaker isolation across upstreams.
@@ -699,6 +719,7 @@ Test:
 ## End-to-end tests
 
 Start the full stack using Docker Compose and exercise:
+
 - Valid and invalid API keys.
 - Allowed and rejected traffic.
 - Cache hits and misses.
@@ -710,6 +731,7 @@ Start the full stack using Docker Compose and exercise:
 ## Performance tests
 
 Run controlled k6 workloads against:
+
 1. A baseline mock upstream.
 2. The gateway without optional policies.
 3. The gateway with local rate limiting.
@@ -724,6 +746,7 @@ Record requests per second, p50/p95/p99 latency, error rate, CPU, memory, and po
 ## Phase 1 — Gateway foundation
 
 Deliverables:
+
 - TypeScript monorepo and lint/test/build scripts.
 - Fastify server and route registry.
 - Reverse proxy with correct forwarding.
@@ -736,6 +759,7 @@ Exit criteria: A client can call a configured route and receive the correct upst
 ## Phase 2 — Local rate limiting and authentication
 
 Deliverables:
+
 - API-key authentication.
 - Token-bucket interface and in-memory implementation.
 - Rate-limit response headers.
@@ -747,6 +771,7 @@ Exit criteria: Concurrent tests demonstrate correct local bucket behavior.
 ## Phase 3 — Reliability middleware
 
 Deliverables:
+
 - Request timeouts.
 - Safe bounded retries.
 - Per-upstream circuit breakers.
@@ -758,10 +783,11 @@ Exit criteria: An unhealthy upstream can be isolated without crashing the gatewa
 ## Phase 4 — Redis-backed distributed rate limiting
 
 Deliverables:
+
 - Redis connection management.
 - Atomic Lua token-bucket implementation.
 - Configurable failure policy.
-- Two-instance integration tests.
+- Two-instance integration tests.git add -A
 - Redis health and failure metrics.
 
 Exit criteria: Two gateway instances enforce a shared budget under concurrent traffic.
@@ -769,6 +795,7 @@ Exit criteria: Two gateway instances enforce a shared budget under concurrent tr
 ## Phase 5 — Caching and observability
 
 Deliverables:
+
 - Bounded in-memory response cache.
 - Cache eligibility rules and TTL handling.
 - Prometheus metrics.
@@ -780,6 +807,7 @@ Exit criteria: Dashboard data matches the gateway's observed behavior in integra
 ## Phase 6 — Release and benchmarks
 
 Deliverables:
+
 - Production-oriented Docker image.
 - Public GitHub repository and license.
 - Example configuration and API documentation.

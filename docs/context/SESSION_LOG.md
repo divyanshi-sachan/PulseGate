@@ -142,3 +142,14 @@ Format: date · goal · what changed · decisions (ADR links) · open threads.
   with an explicit header table.
 - **Decisions:** rate-limit headers appear exactly when a bucket was consulted, so not on 401/400/404/405 (documented in ADR-0032).
 - **Verified:** `pnpm check` (183 tests); three mutations (trust any XFF, no cap, headers on success only) each fail the suite.
+
+## 2026-10-23 · Phase 3: retries + circuit breakers
+- **Decisions (user, all recommended):** Q11 `halfOpenSuccessThreshold` (default 1); Q3 lowercase states; retries only for
+  GET/HEAD/OPTIONS without a body; optional `attemptTimeoutMs`. Claude-chosen (in [ADR-0033](../adr/0033-retries-and-breakers.md), to review):
+  Retry-After on CIRCUIT_OPEN, hold retryable responses until the next permit, settle breaker outcome at body end.
+- **Changed:** new `packages/reliability`; ProxyService rewritten as an attempt loop; config adds the two settings with cross-field
+  validation; app wires the breaker registry (transition logs), `attempts` in request logs, Retry-After on 503, `clientErrorHandler`
+  normalized 400s; Dockerfile copies the new manifest; example config, README, CLAUDE.md, ADR-0026/0032/0033.
+- **Verified:** 223 tests, stable over 3 runs; 4 mutations caught (one only after adding a fail-fast latency test); Docker demo of
+  retries at a 30% fail rate, breaker isolation and half-open recovery. My first Docker script expected the orders breaker to stay closed
+  after I had already caused 5 consecutive failures; the gateway was right and the script was wrong.

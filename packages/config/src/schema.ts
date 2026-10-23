@@ -13,6 +13,7 @@ export const CIRCUIT_BREAKER_DEFAULTS = {
   failureThreshold: 5,
   openDurationMs: 10_000,
   halfOpenMaxRequests: 1,
+  halfOpenSuccessThreshold: 1,
   failureStatuses: [500, 502, 503, 504],
 } as const;
 
@@ -180,6 +181,9 @@ const circuitBreakerSchema = z
     failureThreshold: positiveInt.default(CIRCUIT_BREAKER_DEFAULTS.failureThreshold),
     openDurationMs: positiveInt.default(CIRCUIT_BREAKER_DEFAULTS.openDurationMs),
     halfOpenMaxRequests: positiveInt.default(CIRCUIT_BREAKER_DEFAULTS.halfOpenMaxRequests),
+    halfOpenSuccessThreshold: positiveInt.default(
+      CIRCUIT_BREAKER_DEFAULTS.halfOpenSuccessThreshold,
+    ),
     failureStatuses: failureStatuses.default(() => [...CIRCUIT_BREAKER_DEFAULTS.failureStatuses]),
   })
   .prefault({});
@@ -188,6 +192,7 @@ const circuitBreakerOverrideSchema = z.strictObject({
   failureThreshold: positiveInt.optional(),
   openDurationMs: positiveInt.optional(),
   halfOpenMaxRequests: positiveInt.optional(),
+  halfOpenSuccessThreshold: positiveInt.optional(),
   failureStatuses: failureStatuses.optional(),
 });
 
@@ -259,6 +264,8 @@ const routeSchema = z.strictObject({
     refillRatePerSecond: z.number().positive(),
   }),
   timeoutMs: z.int().min(1).max(300_000).default(3000),
+  /** Optional per-attempt cut-off within timeoutMs; enables retrying hung attempts (ADR-0033). */
+  attemptTimeoutMs: z.int().min(1).max(300_000).optional(),
   retries: retriesSchema,
   cache: cacheSchema,
   forwarding: z
@@ -339,6 +346,33 @@ function checkCrossFieldRules(config: BaseConfig, ctx: z.RefinementCtx): void {
     }
   });
 
+  // Breaker settings must be coherent after merging defaults and overrides (ADR-0033).
+  config.upstreams.forEach((upstream, i) => {
+    const maxProbes =
+      upstream.circuitBreaker?.halfOpenMaxRequests ?? config.circuitBreaker.halfOpenMaxRequests;
+    const threshold =
+      upstream.circuitBreaker?.halfOpenSuccessThreshold ??
+      config.circuitBreaker.halfOpenSuccessThreshold;
+    if (threshold <= maxProbes) return;
+    ctx.addIssue({
+      code: 'custom',
+      path:
+        upstream.circuitBreaker?.halfOpenSuccessThreshold === undefined
+          ? ['circuitBreaker', 'halfOpenSuccessThreshold']
+          : ['upstreams', i, 'circuitBreaker', 'halfOpenSuccessThreshold'],
+      message: `${String(threshold)} exceeds halfOpenMaxRequests (${String(maxProbes)}) for upstream "${upstream.id}"; the breaker could never close (ADR-0033)`,
+    });
+  });
+
+  config.routes.forEach((route, i) => {
+    if (route.attemptTimeoutMs === undefined || route.attemptTimeoutMs <= route.timeoutMs) return;
+    ctx.addIssue({
+      code: 'custom',
+      path: ['routes', i, 'attemptTimeoutMs'],
+      message: `must not exceed timeoutMs (${String(route.timeoutMs)}); the overall deadline always wins (ADR-0033)`,
+    });
+  });
+
   const listeners = [
     { path: ['server', 'port'], name: 'server.port', port: config.server.port },
     { path: ['admin', 'port'], name: 'admin.port', port: config.admin.port },
@@ -369,6 +403,8 @@ function resolve(config: BaseConfig) {
         failureThreshold: override?.failureThreshold ?? globalBreaker.failureThreshold,
         openDurationMs: override?.openDurationMs ?? globalBreaker.openDurationMs,
         halfOpenMaxRequests: override?.halfOpenMaxRequests ?? globalBreaker.halfOpenMaxRequests,
+        halfOpenSuccessThreshold:
+          override?.halfOpenSuccessThreshold ?? globalBreaker.halfOpenSuccessThreshold,
         failureStatuses: override?.failureStatuses ?? globalBreaker.failureStatuses,
       },
     })),

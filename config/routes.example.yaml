@@ -27,7 +27,8 @@ rateLimit:
 circuitBreaker: # global defaults, overridable per upstream (ADR-0015, ADR-0024)
   failureThreshold: 5 # default; consecutive failed attempts before opening
   openDurationMs: 10000 # default
-  halfOpenMaxRequests: 1 # default
+  halfOpenMaxRequests: 1 # default; concurrent probes allowed in half-open
+  halfOpenSuccessThreshold: 1 # default; successful probes needed to close, <= halfOpenMaxRequests (ADR-0033)
   failureStatuses: [500, 502, 503, 504] # default; 5xx only
 
 upstreams: # the only place upstream URLs live (ADR-0013)
@@ -51,8 +52,9 @@ routes:
       capacity: 60
       refillRatePerSecond: 1
     timeoutMs: 3000 # default; total request deadline including retries
+    # attemptTimeoutMs: 1000   # optional; cut a hung attempt and retry within timeoutMs (ADR-0033)
     retries:
-      maxAttempts: 2 # default 1 (no retries); counts the first attempt (ADR-0016)
+      maxAttempts: 2 # default 1 (no retries); counts the first attempt; GET/HEAD/OPTIONS without a body only (ADR-0033)
       baseDelayMs: 50 # default
       maxDelayMs: 1000 # default
       retryableStatuses: [502, 503, 504] # default

@@ -3,8 +3,8 @@
 A lightweight, self-hostable API gateway focused on reliability: routing, API-key auth, rate limiting,
 caching, timeouts, bounded retries and circuit breakers, with observable, explainable behavior.
 
-**Status:** Phases 1–2 complete (proxy, API-key auth, local rate limiting). Retries/breakers, Redis limiting,
-caching and metrics are next. See [docs/context/STATE.md](docs/context/STATE.md) for the current state and [docs/adr/](docs/adr/README.md)
+**Status:** Phases 1–3 complete (proxy, API-key auth, local rate limiting, bounded retries, per-upstream circuit
+breakers). Redis-backed limiting, caching and metrics are next. See [docs/context/STATE.md](docs/context/STATE.md) for the current state and [docs/adr/](docs/adr/README.md)
 for the design decisions.
 
 ## Quickstart (Docker)
@@ -31,6 +31,9 @@ curl -i "http://localhost:8080/api/orders/1?_delay=4000" -H "x-api-key: $KEY"   
 curl -i "http://localhost:8080/api/orders/1?_status=503" -H "x-api-key: $KEY"   # upstream status passed through
 curl -i "http://localhost:8080/api/orders/1?_reset=1" -H "x-api-key: $KEY"      # 502 UPSTREAM_UNAVAILABLE
 curl -i http://localhost:8080/nope                                              # 404 ROUTE_NOT_FOUND
+curl -i "http://localhost:8080/api/orders/1?_failRate=0.3" -H "x-api-key: $KEY" # flaky upstream; GETs retried once
+for i in 1 2 3 4; do curl -s -o /dev/null -w '%{http_code} ' "http://localhost:8080/api/payments/1?_reset=1"; done
+# 502 502 502 503: the payments circuit breaker opened (CIRCUIT_OPEN, Retry-After: 10)
 ```
 
 Create real keys with `pnpm keygen --client <id>`. It prints the key once plus the SHA-256 digest to put in
@@ -58,6 +61,7 @@ Configuration is validated at startup; every option and default is documented in
 | `apps/gateway` | Fastify gateway: public and operations listeners, routing, proxy |
 | `packages/config` | Zod config schema and loader |
 | `packages/rate-limiter` | Token-bucket `RateLimiter` and in-memory implementation |
+| `packages/reliability` | Circuit breakers and retry policy |
 | `packages/shared` | Normalized error registry |
 | `examples/mock-upstreams` | Mock upstream with fault injection |
 | `docs/adr` | Architecture decision records |

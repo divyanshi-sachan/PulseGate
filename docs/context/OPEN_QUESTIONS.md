@@ -6,18 +6,11 @@ with the ADR link. `[blocks: X]` marks the phase or component that can't be fina
 
 ## Open
 
-- **Q3 — Breaker state naming.** system_design §10 uses `CLOSED/OPEN/HALF_OPEN`; tech_impl §10.4 uses
-  `"closed" | "open" | "half-open"`. *Proposed:* lowercase string union in code and metrics labels.
-
 - **Q6 — Caching on authenticated routes.** `[blocks: Phase 5 cache]`
   "Don't cache requests with authorization headers by default" — but auth-required routes always carry `X-API-Key`.
   Does the API key count, and is the cache partitioned per client?
   *Proposed:* API key does not by itself disable caching; cache key includes `clientId` by default
   (`scope: "client"`), with an explicit opt-in `scope: "shared"` for public data. `Authorization` header still bypasses.
-
-- **Q11 — Half-open → closed threshold.** "After the required successful probes" but only `halfOpenMaxRequests` is configurable.
-  *Proposed:* add `halfOpenSuccessThreshold` (default 1, ≤ `halfOpenMaxRequests`).
-  (ADR-0024 settles failure counting; a failed probe re-opens.)
 
 - **Q13 — Request deduplication (P1) has no design.** *Proposed:* defer; singleflight on the cache key for
   cache-eligible GETs only, designed in its own ADR before implementation.
@@ -40,3 +33,5 @@ with the ADR link. `[blocks: X]` marks the phase or component that can't be fina
 - **Q17 → [ADR-0027](../adr/0027-request-ids.md):** always generate `req_<uuid>`; incoming `X-Request-ID` discarded; sent upstream and returned.
 - **Q8 → [ADR-0032](../adr/0032-local-rate-limiting.md):** unauthenticated routes are limited per route + client IP (IP from ADR-0021).
 - **Q9 → [ADR-0032](../adr/0032-local-rate-limiting.md):** `X-RateLimit-Limit/Remaining/Reset` on rate-limited routes; `Retry-After` on 429.
+- **Q3 → [ADR-0033](../adr/0033-retries-and-breakers.md):** breaker states are `"closed" | "open" | "half-open"`.
+- **Q11 → [ADR-0033](../adr/0033-retries-and-breakers.md):** `halfOpenSuccessThreshold` (default 1, ≤ `halfOpenMaxRequests`).
