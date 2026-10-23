@@ -52,7 +52,7 @@ These come straight from the specs; violating one requires an ADR first.
 - **Caching:** conservative by default — GET + success only, TTL + size + entry bounds, respect
   `private`/`no-store`, never cache personalized data under a shared key, no credentials in keys.
 - **Security:** never log/label/cache raw API keys or auth headers; admin endpoints auth'd separately;
-  upstreams only from validated config (no user-supplied URLs → SSRF); request/response size limits;
+  upstreams only from validated config — routes reference them by `upstreamId` (ADR-0013), `baseUrl` http/https only, never from requests (SSRF); request/response size limits;
   secrets only via env (`.env.example` is committed, `.env` never is).
 - **Errors:** typed `GatewayErrorCode` + HTTP status + `requestId` in one normalized JSON shape;
   no stack traces to clients. 404 route / 401 auth / 429 limit / 503 circuit open / 504 timeout / 502 conn failure.

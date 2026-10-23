@@ -6,11 +6,6 @@ with the ADR link. `[blocks: X]` marks the phase or component that can't be fina
 
 ## Open
 
-- **Q1 — How do routes reference upstreams?** `[blocks: config schema, Phase 1]`
-  tech_impl §8 example puts a URL on the route (`upstream: "http://orders-mock:4001"`) *and* defines
-  `upstreams: [{id: "orders-service", baseUrl}]`; the `RouteConfig` interfaces use `upstreamId`.
-  *Proposed:* routes carry `upstreamId`; only `upstreams[]` holds `baseUrl`; startup fails on unknown ids.
-
 - **Q2 — Auth field shape.** `[blocks: config schema]`
   system_design §8 has `authRequired: boolean`; tech_impl §10.1 has `auth: { required: boolean }`.
   *Proposed:* nested `auth: { required }` (room for header name / scopes later).
@@ -21,6 +16,7 @@ with the ADR link. `[blocks: X]` marks the phase or component that can't be fina
 - **Q4 — Where does circuit-breaker config live?** `[blocks: config schema, Phase 3]`
   `circuitBreaker` YAML appears in tech_impl §6 but in no `RouteConfig`/upstream schema.
   *Proposed:* on the upstream entry (breakers are per upstream), with global defaults.
+  *Note:* ADR-0013 makes `upstreams[]` the natural home and fixes that routes sharing an upstream share its breaker.
 
 - **Q5 — Retry policy fields and `maxAttempts` semantics.** `[blocks: config schema, Phase 3]`
   Config only has `retries.maxAttempts`; `RetryPolicy` adds `baseDelayMs`, `maxDelayMs`, `retryableStatuses`.
@@ -63,4 +59,4 @@ with the ADR link. `[blocks: X]` marks the phase or component that can't be fina
 
 ## Resolved
 
-_(none yet — move items here as `Qn → ADR-NNNN` when decided)_
+- **Q1 → [ADR-0013](../adr/0013-routes-reference-upstream-id.md):** routes must use `upstreamId`; URLs live only in top-level `upstreams[]`; inline route URLs unsupported.

@@ -17,3 +17,4 @@ Accepted ADRs **override** the spec documents where they conflict. Create new on
 | [0010](0010-pipeline-order.md) | Fixed request pipeline order | Accepted |
 | [0011](0011-normalized-errors.md) | Typed, normalized gateway errors | Accepted |
 | [0012](0012-defer-shared-state.md) | Defer shared caching and distributed breaker state | Accepted (deferral) |
+| [0013](0013-routes-reference-upstream-id.md) | Routes reference upstreams by `upstreamId` | Accepted |
