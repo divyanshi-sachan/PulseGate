@@ -153,3 +153,12 @@ Format: date · goal · what changed · decisions (ADR links) · open threads.
 - **Verified:** 223 tests, stable over 3 runs; 4 mutations caught (one only after adding a fail-fast latency test); Docker demo of
   retries at a 30% fail rate, breaker isolation and half-open recovery. My first Docker script expected the orders breaker to stay closed
   after I had already caused 5 consecutive failures; the gateway was right and the script was wrong.
+
+## 2026-10-23 · Phase 3 review: retained responses and socket hygiene
+- **Goal:** make the retained-503 vs CIRCUIT_OPEN contract explicit, and prove retained bodies don't leak sockets.
+- **Changed:** harness `connectionsAccepted()` / `openConnections()`; 6 tests (3 contract, 3 socket); explicit discard of a held body
+  when the client leaves during backoff; ADR-0033 updated.
+- **Finding (corrected):** I suspected a leak on client-abort-during-backoff. Experiments showed none: undici applies the attempt's
+  abort signal (which includes the client signal) to the body. The explicit discard stays as defense in depth; the streaming-503
+  test fails only when both mechanisms are removed. My first leak test used a fully received 4-byte body, where an idle pooled
+  keep-alive socket looked like a leak. I fixed the test to use a still-streaming body.

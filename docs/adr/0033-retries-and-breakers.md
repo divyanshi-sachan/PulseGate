@@ -64,6 +64,20 @@ transitions are logged. Metrics come in Phase 5 and hook into the same points.
   - Requests rejected by Node's HTTP parser got Fastify's own 400 body. They now get the normalized shape via
     `clientErrorHandler`.
   - `CIRCUIT_OPEN` rejections were logged as "upstream request failed" warnings; they no longer are.
+- **Retained-response contract (review, 2026-10-23):**
+  - Once a real upstream response exists, it is never replaced by a gateway-invented error. If the breaker opens, or the
+    deadline leaves no room before the retry, the client gets that retained response.
+  - **503 `CIRCUIT_OPEN`** (normalized JSON, `Retry-After`) is returned **only when the breaker refuses before any upstream
+    attempt**. Paired tests check both halves.
+- **Retained bodies are released, not drained:**
+  - Before the next attempt, a held body is destroyed rather than read to the end. A retryable error body may be large,
+    and reading it only to keep one connection alive isn't worth it; undici opens new connections as needed.
+  - If the client leaves during backoff, the held body is released immediately, by two independent mechanisms. The
+    attempt's abort signal includes the client disconnect and undici applies it to the body, and the executor also
+    discards the held body explicitly (defense in depth).
+  - A streaming-503 test fails only when **both** mechanisms are removed. Socket-count tests also show that discarded
+    attempts are closed and that open upstream connections stay ≤ 1 across 30 retried requests.
+  - An earlier suspicion of a leak on this path was disproved by those experiments.
 - The breaker counts **consecutive** failed attempts across all requests, including retries (ADR-0024). Several always-failing
   calls with retries can open it quickly; that is intended, and it's why `failureThreshold` is per upstream.
 - Config: `circuitBreaker.halfOpenSuccessThreshold` and `routes[].attemptTimeoutMs`, validated (ADR-0026 table updated).

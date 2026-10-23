@@ -331,3 +331,123 @@ describe('circuit breaker (ADR-0024, ADR-0033)', () => {
     expect((await send(gw.port, { path: '/api/orders' })).status).toBe(200);
   });
 });
+
+describe('retained upstream responses vs CIRCUIT_OPEN (ADR-0024, ADR-0033)', () => {
+  // A real upstream response, once it exists, is never replaced by a gateway-invented error.
+  it('returns the retained upstream 503 when the breaker opens before the retry can run', async () => {
+    const { gw, upstream } = await setup(scripted(busy), [retrying(5)], breaker(1));
+    const response = await send(gw.port, { path: '/api/orders' });
+    expect(response.status).toBe(503);
+    expect(response.body).toBe('busy');
+    expect(response.headers['retry-after']).toBeUndefined();
+    // The mock's own 503 (no content type), not the gateway's JSON error.
+    expect(response.headers['content-type']).toBeUndefined();
+    expect(upstream.requests).toHaveLength(1);
+  });
+
+  it('returns the retained upstream 503 when the deadline leaves no room for a retry', async () => {
+    const { gw, upstream, logs } = await setup(
+      scripted(busy),
+      [
+        retrying(3, {
+          timeoutMs: 400,
+          retries: { maxAttempts: 3, baseDelayMs: 1000, maxDelayMs: 1000 },
+        }),
+      ],
+      {},
+      { random: () => 0.999 },
+    );
+    const started = performance.now();
+    const response = await send(gw.port, { path: '/api/orders' });
+    expect(response.status).toBe(503);
+    expect(response.body).toBe('busy');
+    expect(performance.now() - started).toBeLessThan(150);
+    expect(upstream.requests).toHaveLength(1);
+    expect((await completedLines(logs))[0]).toMatchObject({ attempts: 1 });
+  });
+
+  it('returns a normalized 503 CIRCUIT_OPEN only when the breaker is open before any attempt', async () => {
+    const { gw, upstream } = await setup(scripted(busy), [retrying(5)], breaker(1));
+    await send(gw.port, { path: '/api/orders' }); // opens the breaker
+    const response = await send(gw.port, { path: '/api/orders' });
+    expect(response.status).toBe(503);
+    expect(response.headers['content-type']).toMatch(/application\/json/);
+    expect(errorCode(response)).toBe('CIRCUIT_OPEN');
+    expect(response.headers['retry-after']).toBe('10');
+    expect(upstream.requests).toHaveLength(1);
+  });
+});
+
+describe('retained bodies never leak upstream sockets (ADR-0033)', () => {
+  async function eventuallyOpen(upstream: MockUpstream, expected: (n: number) => boolean) {
+    let open = -1;
+    for (let i = 0; i < 50; i++) {
+      open = await upstream.openConnections();
+      if (expected(open)) break;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    return open;
+  }
+
+  // A 503 whose body keeps streaming: the connection stays busy (not reusable) for as long as the
+  // gateway holds the response, so a held body that is never released is a real socket leak.
+  const busyStreaming: Step = (_req, res) => {
+    res.writeHead(503, { 'content-type': 'text/plain' });
+    res.write('busy');
+    const timer = setInterval(() => res.write('.'), 50);
+    res.on('close', () => {
+      clearInterval(timer);
+    });
+  };
+
+  it('releases the retained connection when the client disconnects during backoff', async () => {
+    const { gw, upstream } = await setup(
+      scripted(busyStreaming),
+      [
+        retrying(3, {
+          timeoutMs: 10_000,
+          retries: { maxAttempts: 3, baseDelayMs: 2000, maxDelayMs: 2000 },
+        }),
+      ],
+      {},
+      { random: () => 0.999 },
+    );
+    await new Promise<void>((resolve) => {
+      const req = httpRequest({ host: '127.0.0.1', port: gw.port, path: '/api/orders' });
+      req.on('error', () => {
+        resolve();
+      });
+      req.end();
+      // The first 503 arrives within a few ms; the gateway is now holding it during a ~2 s backoff.
+      setTimeout(() => {
+        req.destroy();
+        resolve();
+      }, 150);
+    });
+    expect(upstream.requests).toHaveLength(1);
+    expect(await eventuallyOpen(upstream, (n) => n === 0)).toBe(0);
+  });
+
+  it('closes each discarded attempt and keeps at most one idle connection afterwards', async () => {
+    const { gw, upstream } = await setup(scripted(busy, busy, ok), [retrying(3)]);
+    expect((await send(gw.port, { path: '/api/orders' })).status).toBe(200);
+    expect(upstream.requests).toHaveLength(3);
+    expect(await eventuallyOpen(upstream, (n) => n <= 1)).toBeLessThanOrEqual(1);
+  });
+
+  it('stays bounded across many retried requests', async () => {
+    let calls = 0;
+    const { gw, upstream } = await setup(
+      (_req, res) => {
+        calls++;
+        if (calls % 2 === 1) busy(_req, res);
+        else ok(_req, res);
+      },
+      [retrying(2)],
+    );
+    for (let i = 0; i < 30; i++)
+      expect((await send(gw.port, { path: '/api/orders' })).status).toBe(200);
+    expect(upstream.requests).toHaveLength(60);
+    expect(await eventuallyOpen(upstream, (n) => n <= 1)).toBeLessThanOrEqual(1);
+  });
+});

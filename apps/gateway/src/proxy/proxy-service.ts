@@ -179,15 +179,25 @@ export class ProxyService {
         // Hold the real response until the next attempt is actually allowed (ADR-0033).
         if (failureStatus) permit.failure();
         else permit.success();
-        const next = await this.#nextPermit(
-          breaker,
-          attempt,
-          route,
-          deadline,
-          deadlineAt,
-          input.clientSignal,
-        );
+        let next: BreakerPermit | undefined;
+        try {
+          next = await this.#nextPermit(
+            breaker,
+            attempt,
+            route,
+            deadline,
+            deadlineAt,
+            input.clientSignal,
+          );
+        } catch (error) {
+          // The client left during backoff: release the held body and its socket now, instead of
+          // leaving the connection busy until undici's body timeout.
+          discard(response);
+          throw error;
+        }
         if (next === undefined) return this.#respond(response, undefined, deadline, input);
+        // Destroyed rather than drained: a retryable error body may be large, and reading it only
+        // to keep one connection alive isn't worth it. Undici opens a new connection as needed.
         discard(response);
         permit = next;
         continue;

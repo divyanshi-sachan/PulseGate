@@ -21,6 +21,10 @@ export interface RecordedRequest {
 export interface MockUpstream {
   url: string;
   requests: RecordedRequest[];
+  /** TCP connections the upstream has accepted so far. */
+  connectionsAccepted(): number;
+  /** TCP connections currently open (to detect sockets the gateway never released). */
+  openConnections(): Promise<number>;
   close(): Promise<void>;
 }
 
@@ -46,9 +50,21 @@ export async function startUpstream(
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');
   const { port } = server.address() as AddressInfo;
+  let accepted = 0;
+  server.on('connection', () => {
+    accepted++;
+  });
   return {
     url: `http://127.0.0.1:${String(port)}`,
     requests,
+    connectionsAccepted: () => accepted,
+    openConnections: () =>
+      new Promise<number>((resolve, reject) => {
+        server.getConnections((error, count) => {
+          if (error) reject(error);
+          else resolve(count);
+        });
+      }),
     async close() {
       server.closeAllConnections();
       server.close();
