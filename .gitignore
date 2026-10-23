@@ -1,0 +1,11 @@
+node_modules/
+dist/
+coverage/
+.env
+.env.*
+!.env.example
+.DS_Store
+benchmarks/reports/raw/
+# Claude Code: per-machine and per-session files
+.claude/settings.local.json
+.claude/state/
