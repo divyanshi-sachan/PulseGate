@@ -1,0 +1,777 @@
+{
+  "runId": "20261024T105735Z-apple-m5-full",
+  "profile": "full",
+  "startedAt": "2026-10-24T10:57:36.000Z",
+  "host": {
+    "cpuModel": "Apple M5",
+    "logicalCpus": 10,
+    "memoryBytes": 17179869184,
+    "os": "Darwin 25.6.0 (arm64)"
+  },
+  "gitCommit": "9458b23e915a43804001f25fda5625d918ac3b1b",
+  "scenarios": [
+    {
+      "name": "k0-r250",
+      "offered": "250 rps, fixed 1 KiB body",
+      "achievedRps": 250,
+      "dropped": 0,
+      "latencyMs": {
+        "avg": 0.3616557544666657,
+        "med": 0.348334,
+        "p90": 0.511275,
+        "p95": 0.592291,
+        "p99": 1.2553414299999992,
+        "max": 7.520667,
+        "count": 15000
+      },
+      "serverErrorPct": 0,
+      "gates": [
+        {
+          "name": "k6 correctness checks (exit code)",
+          "pass": true,
+          "evidence": "k6 exit 0"
+        },
+        {
+          "name": "statuses only 200",
+          "pass": true,
+          "evidence": "seen: 200"
+        },
+        {
+          "name": "mock received every request",
+          "pass": true,
+          "evidence": "mock /_stats delta = 18751, k6 = 18751"
+        },
+        {
+          "name": "gateway saw none of them",
+          "pass": true,
+          "evidence": "/metrics delta = 0, expected = 0"
+        }
+      ]
+    },
+    {
+      "name": "k0-r500",
+      "offered": "500 rps, fixed 1 KiB body",
+      "achievedRps": 500,
+      "dropped": 0,
+      "latencyMs": {
+        "avg": 0.28451083970000035,
+        "med": 0.2826455,
+        "p90": 0.3702081,
+        "p95": 0.4272951999999999,
+        "p99": 1.1302649999999996,
+        "max": 12.950583,
+        "count": 30000
+      },
+      "serverErrorPct": 0,
+      "gates": [
+        {
+          "name": "k6 correctness checks (exit code)",
+          "pass": true,
+          "evidence": "k6 exit 0"
+        },
+        {
+          "name": "statuses only 200",
+          "pass": true,
+          "evidence": "seen: 200"
+        },
+        {
+          "name": "mock received every request",
+          "pass": true,
+          "evidence": "mock /_stats delta = 37501, k6 = 37501"
+        },
+        {
+          "name": "gateway saw none of them",
+          "pass": true,
+          "evidence": "/metrics delta = 0, expected = 0"
+        }
+      ]
+    },
+    {
+      "name": "k0-r1000",
+      "offered": "1000 rps, fixed 1 KiB body",
+      "achievedRps": 1000.0166666666667,
+      "dropped": 0,
+      "latencyMs": {
+        "avg": 0.28255439352677386,
+        "med": 0.208708,
+        "p90": 0.444708,
+        "p95": 0.566458,
+        "p99": 1.397625,
+        "max": 19.656708,
+        "count": 60001
+      },
+      "serverErrorPct": 0,
+      "gates": [
+        {
+          "name": "k6 correctness checks (exit code)",
+          "pass": true,
+          "evidence": "k6 exit 0"
+        },
+        {
+          "name": "statuses only 200",
+          "pass": true,
+          "evidence": "seen: 200"
+        },
+        {
+          "name": "mock received every request",
+          "pass": true,
+          "evidence": "mock /_stats delta = 75002, k6 = 75002"
+        },
+        {
+          "name": "gateway saw none of them",
+          "pass": true,
+          "evidence": "/metrics delta = 0, expected = 0"
+        }
+      ]
+    },
+    {
+      "name": "k1-r250",
+      "offered": "250 rps, fixed 1 KiB body",
+      "achievedRps": 250.01666666666668,
+      "dropped": 0,
+      "latencyMs": {
+        "avg": 0.9618358746083605,
+        "med": 0.946083,
+        "p90": 1.367541,
+        "p95": 1.62525,
+        "p99": 3.612541,
+        "max": 38.536,
+        "count": 15001
+      },
+      "serverErrorPct": 0,
+      "gates": [
+        {
+          "name": "k6 correctness checks (exit code)",
+          "pass": true,
+          "evidence": "k6 exit 0"
+        },
+        {
+          "name": "statuses only 200",
+          "pass": true,
+          "evidence": "seen: 200"
+        },
+        {
+          "name": "bench-plain: k6 responses = gateway requests_total delta",
+          "pass": true,
+          "evidence": "k6 = 18752, /metrics = 18752"
+        },
+        {
+          "name": "bench-plain: 2xx k6 = /metrics",
+          "pass": true,
+          "evidence": "k6 = 18752, /metrics = 18752"
+        },
+        {
+          "name": "every request reached the mock",
+          "pass": true,
+          "evidence": "mock /_stats delta = 18752, k6 = 18752"
+        }
+      ]
+    },
+    {
+      "name": "k1-r500",
+      "offered": "500 rps, fixed 1 KiB body",
+      "achievedRps": 500.01666666666665,
+      "dropped": 0,
+      "latencyMs": {
+        "avg": 0.8212559284357146,
+        "med": 0.5605,
+        "p90": 1.316084,
+        "p95": 1.736583,
+        "p99": 4.3365,
+        "max": 60.362875,
+        "count": 30001
+      },
+      "serverErrorPct": 0,
+      "gates": [
+        {
+          "name": "k6 correctness checks (exit code)",
+          "pass": true,
+          "evidence": "k6 exit 0"
+        },
+        {
+          "name": "statuses only 200",
+          "pass": true,
+          "evidence": "seen: 200"
+        },
+        {
+          "name": "bench-plain: k6 responses = gateway requests_total delta",
+          "pass": true,
+          "evidence": "k6 = 37502, /metrics = 37502"
+        },
+        {
+          "name": "bench-plain: 2xx k6 = /metrics",
+          "pass": true,
+          "evidence": "k6 = 37502, /metrics = 37502"
+        },
+        {
+          "name": "every request reached the mock",
+          "pass": true,
+          "evidence": "mock /_stats delta = 37502, k6 = 37502"
+        }
+      ]
+    },
+    {
+      "name": "k1-r1000",
+      "offered": "1000 rps, fixed 1 KiB body",
+      "achievedRps": 1000.0166666666667,
+      "dropped": 0,
+      "latencyMs": {
+        "avg": 0.5523894794420108,
+        "med": 0.322959,
+        "p90": 0.763417,
+        "p95": 1.262792,
+        "p99": 3.444958,
+        "max": 54.543375,
+        "count": 60001
+      },
+      "serverErrorPct": 0,
+      "gates": [
+        {
+          "name": "k6 correctness checks (exit code)",
+          "pass": true,
+          "evidence": "k6 exit 0"
+        },
+        {
+          "name": "statuses only 200",
+          "pass": true,
+          "evidence": "seen: 200"
+        },
+        {
+          "name": "bench-plain: k6 responses = gateway requests_total delta",
+          "pass": true,
+          "evidence": "k6 = 75002, /metrics = 75002"
+        },
+        {
+          "name": "bench-plain: 2xx k6 = /metrics",
+          "pass": true,
+          "evidence": "k6 = 75002, /metrics = 75002"
+        },
+        {
+          "name": "every request reached the mock",
+          "pass": true,
+          "evidence": "mock /_stats delta = 75002, k6 = 75002"
+        }
+      ]
+    },
+    {
+      "name": "k4-cache",
+      "offered": "500 rps, one key",
+      "achievedRps": 500.01666666666665,
+      "dropped": 0,
+      "latencyMs": {
+        "avg": 0.371338895503483,
+        "med": 0.344959,
+        "p90": 0.549,
+        "p95": 0.667292,
+        "p99": 1.4445,
+        "max": 28.359834,
+        "count": 30001
+      },
+      "serverErrorPct": 0,
+      "gates": [
+        {
+          "name": "k6 correctness checks (exit code)",
+          "pass": true,
+          "evidence": "k6 exit 0"
+        },
+        {
+          "name": "statuses only 200",
+          "pass": true,
+          "evidence": "seen: 200"
+        },
+        {
+          "name": "k6 HIT = /metrics hit delta",
+          "pass": true,
+          "evidence": "k6 = 37502, /metrics = 37502"
+        },
+        {
+          "name": "k6 MISS = /metrics miss delta",
+          "pass": true,
+          "evidence": "k6 = 0, /metrics = 0"
+        },
+        {
+          "name": "k6 MISS = requests the mock received for the key",
+          "pass": true,
+          "evidence": "k6 = 0, mock /_stats = 0"
+        },
+        {
+          "name": "no bypass",
+          "pass": true,
+          "evidence": "k6 BYPASS = 0, expected = 0"
+        },
+        {
+          "name": "admin API hit delta = k6 HIT",
+          "pass": true,
+          "evidence": "admin = 37502, k6 = 37502"
+        },
+        {
+          "name": "bench-cached: k6 responses = gateway requests_total delta",
+          "pass": true,
+          "evidence": "k6 = 37502, /metrics = 37502"
+        },
+        {
+          "name": "bench-cached: 2xx k6 = /metrics",
+          "pass": true,
+          "evidence": "k6 = 37502, /metrics = 37502"
+        }
+      ]
+    },
+    {
+      "name": "k2-burst",
+      "offered": "50 → 500 → 50 rps (ramping)",
+      "achievedRps": 210.83880858866507,
+      "dropped": 0,
+      "latencyMs": {
+        "avg": 0.6284001048206657,
+        "med": 0.417791,
+        "p90": 1.4950494,
+        "p95": 1.8094085999999998,
+        "p99": 2.5396596799999998,
+        "max": 15.147875,
+        "count": 14749
+      },
+      "serverErrorPct": 0,
+      "gates": [
+        {
+          "name": "k6 correctness checks (exit code)",
+          "pass": true,
+          "evidence": "k6 exit 0"
+        },
+        {
+          "name": "statuses only 200/429",
+          "pass": true,
+          "evidence": "seen: 200, 429"
+        },
+        {
+          "name": "bench-burst: k6 responses = gateway requests_total delta",
+          "pass": true,
+          "evidence": "k6 = 15499, /metrics = 15499"
+        },
+        {
+          "name": "bench-burst: 2xx k6 = /metrics",
+          "pass": true,
+          "evidence": "k6 = 4347, /metrics = 4347"
+        },
+        {
+          "name": "bench-burst: 4xx k6 = /metrics",
+          "pass": true,
+          "evidence": "k6 = 11152, /metrics = 11152"
+        },
+        {
+          "name": "allowed = limiter decisions",
+          "pass": true,
+          "evidence": "k6 200 = 4347, /metrics allowed = 4347"
+        },
+        {
+          "name": "rejected = limiter decisions",
+          "pass": true,
+          "evidence": "k6 429 = 11152, /metrics rejected = 11152"
+        }
+      ]
+    },
+    {
+      "name": "k3-mixed",
+      "offered": "300 rps total (60/20/10/10 %)",
+      "achievedRps": 300.06666666666666,
+      "dropped": 0,
+      "latencyMs": {
+        "avg": 1.0366512151744007,
+        "med": 0.5851459999999999,
+        "p90": 2.3050955,
+        "p95": 2.68815985,
+        "p99": 4.40039075,
+        "max": 18.520375,
+        "count": 18004
+      },
+      "serverErrorPct": 0,
+      "gates": [
+        {
+          "name": "k6 correctness checks (exit code)",
+          "pass": true,
+          "evidence": "k6 exit 0"
+        },
+        {
+          "name": "statuses only 200",
+          "pass": true,
+          "evidence": "seen: 200"
+        },
+        {
+          "name": "bench-cached: k6 responses = gateway requests_total delta",
+          "pass": true,
+          "evidence": "k6 = 13502, /metrics = 13502"
+        },
+        {
+          "name": "bench-cached: 2xx k6 = /metrics",
+          "pass": true,
+          "evidence": "k6 = 13502, /metrics = 13502"
+        },
+        {
+          "name": "bench-auth: k6 responses = gateway requests_total delta",
+          "pass": true,
+          "evidence": "k6 = 4502, /metrics = 4502"
+        },
+        {
+          "name": "bench-auth: 2xx k6 = /metrics",
+          "pass": true,
+          "evidence": "k6 = 4502, /metrics = 4502"
+        },
+        {
+          "name": "bench-write: k6 responses = gateway requests_total delta",
+          "pass": true,
+          "evidence": "k6 = 2252, /metrics = 2252"
+        },
+        {
+          "name": "bench-write: 2xx k6 = /metrics",
+          "pass": true,
+          "evidence": "k6 = 2252, /metrics = 2252"
+        },
+        {
+          "name": "bench-plain: k6 responses = gateway requests_total delta",
+          "pass": true,
+          "evidence": "k6 = 2252, /metrics = 2252"
+        },
+        {
+          "name": "bench-plain: 2xx k6 = /metrics",
+          "pass": true,
+          "evidence": "k6 = 2252, /metrics = 2252"
+        },
+        {
+          "name": "bench-cached share 60 % ± 2 pts",
+          "pass": true,
+          "evidence": "measured 59.99 %"
+        },
+        {
+          "name": "bench-auth share 20 % ± 2 pts",
+          "pass": true,
+          "evidence": "measured 20.00 %"
+        },
+        {
+          "name": "bench-write share 10 % ± 2 pts",
+          "pass": true,
+          "evidence": "measured 10.01 %"
+        },
+        {
+          "name": "bench-plain share 10 % ± 2 pts",
+          "pass": true,
+          "evidence": "measured 10.01 %"
+        }
+      ]
+    },
+    {
+      "name": "k5-limits",
+      "offered": "10 subjects × 20 rps",
+      "achievedRps": 200.2044073156943,
+      "dropped": 0,
+      "latencyMs": {
+        "avg": 1.7992775435325428,
+        "med": 1.578542,
+        "p90": 3.1178332,
+        "p95": 4.1459581,
+        "p99": 5.590017499999999,
+        "max": 14.033917,
+        "count": 6007
+      },
+      "serverErrorPct": 0,
+      "gates": [
+        {
+          "name": "k6 correctness checks (exit code)",
+          "pass": true,
+          "evidence": "k6 exit 0"
+        },
+        {
+          "name": "statuses only 200/429",
+          "pass": true,
+          "evidence": "seen: 200, 429"
+        },
+        {
+          "name": "subject 0: accepted within derived interval",
+          "pass": true,
+          "evidence": "accepted 69, interval [69, 70]"
+        },
+        {
+          "name": "subject 1: accepted within derived interval",
+          "pass": true,
+          "evidence": "accepted 69, interval [69, 70]"
+        },
+        {
+          "name": "subject 2: accepted within derived interval",
+          "pass": true,
+          "evidence": "accepted 69, interval [69, 69]"
+        },
+        {
+          "name": "subject 3: accepted within derived interval",
+          "pass": true,
+          "evidence": "accepted 70, interval [69, 70]"
+        },
+        {
+          "name": "subject 4: accepted within derived interval",
+          "pass": true,
+          "evidence": "accepted 69, interval [69, 70]"
+        },
+        {
+          "name": "subject 5: accepted within derived interval",
+          "pass": true,
+          "evidence": "accepted 70, interval [69, 70]"
+        },
+        {
+          "name": "subject 6: accepted within derived interval",
+          "pass": true,
+          "evidence": "accepted 69, interval [69, 69]"
+        },
+        {
+          "name": "subject 7: accepted within derived interval",
+          "pass": true,
+          "evidence": "accepted 70, interval [69, 70]"
+        },
+        {
+          "name": "subject 8: accepted within derived interval",
+          "pass": true,
+          "evidence": "accepted 69, interval [69, 69]"
+        },
+        {
+          "name": "subject 9: accepted within derived interval",
+          "pass": true,
+          "evidence": "accepted 69, interval [69, 70]"
+        },
+        {
+          "name": "allowed = limiter decisions",
+          "pass": true,
+          "evidence": "k6 200 = 693, /metrics = 693"
+        },
+        {
+          "name": "rejected = limiter decisions",
+          "pass": true,
+          "evidence": "k6 429 = 5314, /metrics = 5314"
+        }
+      ]
+    },
+    {
+      "name": "k6-slow",
+      "offered": "100 rps",
+      "achievedRps": 99.78333333333333,
+      "dropped": 0,
+      "latencyMs": {
+        "avg": 301.92677580691486,
+        "med": 301.834791,
+        "p90": 302.9456414,
+        "p95": 303.4565214,
+        "p99": 305.37728426,
+        "max": 327.667209,
+        "count": 5987
+      },
+      "serverErrorPct": 0,
+      "gates": [
+        {
+          "name": "k6 correctness checks (exit code)",
+          "pass": true,
+          "evidence": "k6 exit 0"
+        },
+        {
+          "name": "statuses only 200",
+          "pass": true,
+          "evidence": "seen: 200"
+        },
+        {
+          "name": "bench-slow: k6 responses = gateway requests_total delta",
+          "pass": true,
+          "evidence": "k6 = 7476, /metrics = 7476"
+        },
+        {
+          "name": "bench-slow: 2xx k6 = /metrics",
+          "pass": true,
+          "evidence": "k6 = 7476, /metrics = 7476"
+        }
+      ]
+    },
+    {
+      "name": "k7-failing",
+      "offered": "200 rps",
+      "achievedRps": 200.01666666666668,
+      "dropped": 0,
+      "latencyMs": {
+        "avg": 2.4224308380968242,
+        "med": 0.980583,
+        "p90": 7.167125,
+        "p95": 10.700708,
+        "p99": 22.74,
+        "max": 59.35425,
+        "count": 12001
+      },
+      "serverErrorPct": 8.685508598853486,
+      "gates": [
+        {
+          "name": "k6 correctness checks (exit code)",
+          "pass": true,
+          "evidence": "k6 exit 0"
+        },
+        {
+          "name": "statuses only 200/503",
+          "pass": true,
+          "evidence": "seen: 200, 503"
+        },
+        {
+          "name": "bench-flaky: k6 responses = gateway requests_total delta",
+          "pass": true,
+          "evidence": "k6 = 15002, /metrics = 15002"
+        },
+        {
+          "name": "bench-flaky: 2xx k6 = /metrics",
+          "pass": true,
+          "evidence": "k6 = 13699, /metrics = 13699"
+        },
+        {
+          "name": "bench-flaky: 5xx k6 = /metrics",
+          "pass": true,
+          "evidence": "k6 = 1303, /metrics = 1303"
+        },
+        {
+          "name": "gateway healthy afterwards",
+          "pass": true,
+          "evidence": "health: {\"status\":\"ok\"}"
+        }
+      ]
+    },
+    {
+      "name": "k9-saturation",
+      "offered": "100 → 4,000 rps over 90 s",
+      "achievedRps": 2047.0916863605514,
+      "dropped": 0,
+      "latencyMs": {
+        "avg": 0.8056732277506449,
+        "med": 0.306417,
+        "p90": 0.8183381000000002,
+        "p95": 1.2770482499999989,
+        "p99": 4.063546959999994,
+        "max": 213.599,
+        "count": 184320
+      },
+      "serverErrorPct": 0,
+      "gates": [
+        {
+          "name": "k6 correctness checks (exit code)",
+          "pass": true,
+          "evidence": "k6 exit 0"
+        }
+      ]
+    },
+    {
+      "name": "k8-shared",
+      "offered": "40 rps, one subject, alternating instances",
+      "achievedRps": 40.0339285643513,
+      "dropped": 0,
+      "latencyMs": {
+        "avg": 1.9990223946711043,
+        "med": 1.8955,
+        "p90": 3.045375,
+        "p95": 3.993416,
+        "p99": 6.397917,
+        "max": 14.234375,
+        "count": 1201
+      },
+      "serverErrorPct": 0,
+      "gates": [
+        {
+          "name": "k6 correctness checks (exit code)",
+          "pass": true,
+          "evidence": "k6 exit 0"
+        },
+        {
+          "name": "statuses only 200/429",
+          "pass": true,
+          "evidence": "seen: 200, 429"
+        },
+        {
+          "name": "subject k6: accepted within derived interval",
+          "pass": true,
+          "evidence": "accepted 139, interval [139, 139]"
+        },
+        {
+          "name": "allowed = decisions on both instances",
+          "pass": true,
+          "evidence": "k6 200 = 139, /metrics (2 instances) = 139"
+        }
+      ]
+    },
+    {
+      "name": "k8-tput-1",
+      "offered": "500 rps, 1 instance",
+      "achievedRps": 500.01666666666665,
+      "dropped": 0,
+      "latencyMs": {
+        "avg": 0.7738538352388236,
+        "med": 0.608041,
+        "p90": 1.295083,
+        "p95": 1.612916,
+        "p99": 3.012083,
+        "max": 23.78125,
+        "count": 30001
+      },
+      "serverErrorPct": 0,
+      "gates": [
+        {
+          "name": "k6 correctness checks (exit code)",
+          "pass": true,
+          "evidence": "k6 exit 0"
+        },
+        {
+          "name": "statuses only 200",
+          "pass": true,
+          "evidence": "seen: 200"
+        },
+        {
+          "name": "bench-redis-plain: k6 responses = gateway requests_total delta",
+          "pass": true,
+          "evidence": "k6 = 37502, /metrics = 37502"
+        },
+        {
+          "name": "bench-redis-plain: 2xx k6 = /metrics",
+          "pass": true,
+          "evidence": "k6 = 37502, /metrics = 37502"
+        }
+      ]
+    },
+    {
+      "name": "k8-tput-2",
+      "offered": "500 rps, 2 instances",
+      "achievedRps": 499.8333333333333,
+      "dropped": 0,
+      "latencyMs": {
+        "avg": 0.9730337672224109,
+        "med": 0.5814585,
+        "p90": 1.2222247000000002,
+        "p95": 1.5530770499999995,
+        "p99": 3.6403587499999994,
+        "max": 147.034875,
+        "count": 29990
+      },
+      "serverErrorPct": 0.0026673068203035394,
+      "gates": [
+        {
+          "name": "k6 correctness checks (exit code)",
+          "pass": false,
+          "evidence": "k6 exit 99"
+        },
+        {
+          "name": "statuses only 200",
+          "pass": false,
+          "evidence": "seen: 200, 503"
+        },
+        {
+          "name": "bench-redis-plain: k6 responses = gateway requests_total delta",
+          "pass": true,
+          "evidence": "k6 = 37491, /metrics = 37491"
+        },
+        {
+          "name": "bench-redis-plain: 2xx k6 = /metrics",
+          "pass": true,
+          "evidence": "k6 = 37490, /metrics = 37490"
+        },
+        {
+          "name": "bench-redis-plain: 5xx k6 = /metrics",
+          "pass": true,
+          "evidence": "k6 = 1, /metrics = 1"
+        }
+      ]
+    }
+  ]
+}

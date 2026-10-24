@@ -9,6 +9,16 @@ with the ADR link. `[blocks: X]` marks the phase or component that can't be fina
 - **Q14 — Version reference mismatch.** system_design_specification.md says "Addendum to PRD v1.1"; prd.md is v1.0.
   *Proposed:* treat prd.md as current; fix the header when convenient.
 
+- **Q15 — Redis command timeout under fail-closed (from ADR-0047).** With `rateLimit.redis.commandTimeoutMs` at its 50 ms
+  default and `redisFailurePolicy: closed`, a ~100 ms stall of the gateway's event loop (observed with Docker Desktop VM
+  pauses) turns into a few 503 `RATE_LIMITER_UNAVAILABLE` (1 and 12 of about 37,500 requests in 2 of 6 windows).
+  *Options:* (a) keep 50 ms and document the trade-off, (b) raise the default (e.g. 200 ms) so short pauses don't reject
+  requests, (c) leave the default and recommend a higher value for fail-closed deployments. *Proposed:* measure on native
+  Linux first; if stalls of this size don't occur there, choose (c), else (b). `[blocks: nothing; production guidance]`
+- **Q13 (reopened as an evidence requirement) — request deduplication.** ADR-0035 deferred it until benchmarks justify
+  it. The first full run could not show a stampede (ADR-0047). *Proposed:* add a stampede scenario (cold key, 300 ms
+  upstream, about 200 concurrent requests) and decide from its upstream call count.
+
 ## Resolved
 
 - **Q1 → [ADR-0013](../adr/0013-routes-reference-upstream-id.md):** routes must use `upstreamId`; URLs live only in top-level `upstreams[]`; inline route URLs unsupported.

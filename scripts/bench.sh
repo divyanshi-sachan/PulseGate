@@ -7,7 +7,9 @@ cd "$(dirname "$0")/.."
 
 export BENCH_PROFILE=${BENCH_PROFILE:-quick}
 ONLY=${BENCH_ONLY:-}
-RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-$(hostname -s | tr -c 'A-Za-z0-9-\n' '-')-${BENCH_PROFILE}"
+# A neutral label, never the hostname: run IDs end up in committed report names (e.g. BENCH_HOST_LABEL=apple-m5).
+HOST_LABEL=$(printf '%s' "${BENCH_HOST_LABEL:-local}" | tr -c 'A-Za-z0-9-' '-')
+RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-${HOST_LABEL}-${BENCH_PROFILE}"
 export BENCH_RUN_DIR="$PWD/benchmarks/reports/raw/$RUN_ID"
 export BENCH_ADMIN_TOKEN
 BENCH_ADMIN_TOKEN=$(openssl rand -hex 24)
@@ -50,12 +52,15 @@ snapshot() { # name phase
 }
 
 start_sampler() { # name
-  local out="$BENCH_RUN_DIR/$1.stats.jsonl" ids
-  ids=$("${STACK[@]}" ps -q | tr '\n' ' ')
-  # shellcheck disable=SC2086
+  local out="$BENCH_RUN_DIR/$1.stats.jsonl"
+  # Re-list the project's containers every round, so the k6 container (started after the sampler) is included:
+  # its CPU shows whether a ceiling is the gateway's or the load generator's.
+  # shellcheck disable=SC2046
   (while :; do
     t=$(date +%s)
-    docker stats --no-stream --format '{{json .}}' $ids 2>/dev/null | sed "s/^/{\"t\":$t,\"s\":/; s/\$/}/" >>"$out"
+    ids=$(docker ps -q --filter label=com.docker.compose.project=pulsegate-bench)
+    [ -n "$ids" ] && docker stats --no-stream --format '{{json .}}' $ids 2>/dev/null |
+      sed "s/^/{\"t\":$t,\"s\":/; s/\$/}/" >>"$out"
   done) &
   SAMPLER=$!
 }

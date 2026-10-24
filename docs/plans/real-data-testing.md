@@ -193,7 +193,7 @@ only the mocks on the Compose network.
 2. **Done (ADR-0045; 10/10 passed against Postman Echo and httpbin, 16 requests per run).** Real API suite R1–R9, `routes.real.yaml`, `pnpm test:real`, `real-apis.yml`. Run it once here and report the result.
 3. **Done (ADR-0046; two quick runs, 84/84 gates each).** k6 suite K0–K8: bench override, scripts, `scripts/bench.sh`, stats sampler, report generator (with tests),
    `bench.yml`, and `k6 inspect` in CI.
-4. Run the full suite on this Mac (Apple M5, 10 cores, 16 GB; Docker Desktop with 10 CPUs and 7.7 GiB) and commit the
+4. **Done (ADR-0047; first full run committed, 104 gates passed and 2 failed with a documented finding; Q15 opened).** Run the full suite on this Mac (Apple M5, 10 cores, 16 GB; Docker Desktop with 10 CPUs and 7.7 GiB) and commit the
    generated report. Then an ADR covering results and findings (including the deferred request-deduplication question,
    Q13, if K4/K7 show stampedes).
 

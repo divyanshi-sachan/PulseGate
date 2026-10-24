@@ -1,0 +1,128 @@
+{
+  "runId": "20261024T111906Z-apple-m5-full",
+  "profile": "full",
+  "startedAt": "2026-10-24T11:19:07.015Z",
+  "host": {
+    "cpuModel": "Apple M5",
+    "logicalCpus": 10,
+    "memoryBytes": 17179869184,
+    "os": "Darwin 25.6.0 (arm64)"
+  },
+  "gitCommit": "9458b23e915a43804001f25fda5625d918ac3b1b",
+  "scenarios": [
+    {
+      "name": "k8-shared",
+      "offered": "40 rps, one subject, alternating instances",
+      "achievedRps": 40.02517501425518,
+      "dropped": 0,
+      "latencyMs": {
+        "avg": 1.8623937224999987,
+        "med": 1.8290205,
+        "p90": 2.779058400000001,
+        "p95": 3.709273249999999,
+        "p99": 4.774033749999999,
+        "max": 17.830833,
+        "count": 1200
+      },
+      "serverErrorPct": 0,
+      "gates": [
+        {
+          "name": "k6 correctness checks (exit code)",
+          "pass": true,
+          "evidence": "k6 exit 0"
+        },
+        {
+          "name": "statuses only 200/429",
+          "pass": true,
+          "evidence": "seen: 200, 429"
+        },
+        {
+          "name": "subject k6: accepted within derived interval",
+          "pass": true,
+          "evidence": "accepted 139, interval [139, 139]"
+        },
+        {
+          "name": "allowed = decisions on both instances",
+          "pass": true,
+          "evidence": "k6 200 = 139, /metrics (2 instances) = 139"
+        }
+      ]
+    },
+    {
+      "name": "k8-tput-1",
+      "offered": "500 rps, 1 instance",
+      "achievedRps": 500,
+      "dropped": 0,
+      "latencyMs": {
+        "avg": 0.7539177415000003,
+        "med": 0.5452085,
+        "p90": 1.2620084,
+        "p95": 1.6043496499999996,
+        "p99": 3.5794758399999975,
+        "max": 30.211042,
+        "count": 30000
+      },
+      "serverErrorPct": 0,
+      "gates": [
+        {
+          "name": "k6 correctness checks (exit code)",
+          "pass": true,
+          "evidence": "k6 exit 0"
+        },
+        {
+          "name": "statuses only 200",
+          "pass": true,
+          "evidence": "seen: 200"
+        },
+        {
+          "name": "bench-redis-plain: k6 responses = gateway requests_total delta",
+          "pass": true,
+          "evidence": "k6 = 37502, /metrics = 37502"
+        },
+        {
+          "name": "bench-redis-plain: 2xx k6 = /metrics",
+          "pass": true,
+          "evidence": "k6 = 37502, /metrics = 37502"
+        }
+      ]
+    },
+    {
+      "name": "k8-tput-2",
+      "offered": "500 rps, 2 instances",
+      "achievedRps": 500.01666666666665,
+      "dropped": 0,
+      "latencyMs": {
+        "avg": 0.8100360480317379,
+        "med": 0.597375,
+        "p90": 1.306834,
+        "p95": 1.601875,
+        "p99": 3.271,
+        "max": 52.306042,
+        "count": 30001
+      },
+      "serverErrorPct": 0,
+      "gates": [
+        {
+          "name": "k6 correctness checks (exit code)",
+          "pass": true,
+          "evidence": "k6 exit 0"
+        },
+        {
+          "name": "statuses only 200",
+          "pass": true,
+          "evidence": "seen: 200"
+        },
+        {
+          "name": "bench-redis-plain: k6 responses = gateway requests_total delta",
+          "pass": true,
+          "evidence": "k6 = 37502, /metrics = 37502"
+        },
+        {
+          "name": "bench-redis-plain: 2xx k6 = /metrics",
+          "pass": true,
+          "evidence": "k6 = 37502, /metrics = 37502"
+        }
+      ]
+    }
+  ]
+}

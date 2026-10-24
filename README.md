@@ -71,6 +71,25 @@ for i in $(seq 1 100); do curl -s -o /dev/null -w '%{http_code}\n' "http://local
 Create real keys with `pnpm keygen --client <id>`. It prints the key once plus the SHA-256 digest to put in
 your clients file (see [config/clients.example.yaml](config/clients.example.yaml)).
 
+## Benchmarks
+
+`pnpm bench` runs a k6 suite against the mock upstreams (never third-party APIs), with fixed container limits. It
+generates reports **only from measured raw files** and checks correctness under load (cache, rate-limit and status
+reconciliation). Reports, with full environment details: [benchmarks/reports/](benchmarks/reports/).
+
+First full run (Apple M5 via Docker Desktop, gateway limited to 2 CPUs; local, not a production claim;
+[report](benchmarks/reports/20261024T105735Z-apple-m5-full.md), findings in
+[ADR-0047](docs/adr/0047-first-benchmark-results.md)):
+
+| offered rps | p99 direct to mock | p99 through the gateway |
+|---|---|---|
+| 250 | 1.26 ms | 3.61 ms |
+| 500 | 1.13 ms | 4.34 ms |
+| 1,000 | 1.40 ms | 3.44 ms |
+
+A ramp to 4,000 rps found no sustained saturation of the 2-CPU gateway. One run is not a baseline; the open findings
+(fail-closed 503s during VM stalls, request deduplication) are tracked in ADR-0047.
+
 ## Local development
 
 Requires Node.js 24+ (developed on 26) and pnpm 11.

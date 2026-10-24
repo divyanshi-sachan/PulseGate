@@ -3,3 +3,5 @@ coverage/
 pnpm-lock.yaml
 # Specs and ADRs are hand-formatted markdown
 **/*.md
+# Generated benchmark reports: kept exactly as scripts/bench-report.ts wrote them (ADR-0046)
+benchmarks/reports/

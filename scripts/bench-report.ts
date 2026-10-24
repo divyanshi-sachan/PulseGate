@@ -87,7 +87,10 @@ export function summarizeStats(lines: string[]): Record<string, ContainerUsage> 
   for (const line of lines) {
     if (line.trim() === '') continue;
     const { s } = JSON.parse(line) as { s: { Name: string; CPUPerc: string; MemUsage: string } };
-    const service = s.Name.replace(/^pulsegate-bench-/, '').replace(/-\d+$/, '');
+    // pulsegate-bench-gateway-1 → gateway; pulsegate-bench-k6-run-1a2b3c → k6 (a one-off `compose run` container).
+    const service = s.Name.replace(/^pulsegate-bench-/, '')
+      .replace(/^k6-run-.*$/, 'k6')
+      .replace(/-\d+$/, '');
     acc[service] ??= { cpu: [], mem: [] };
     acc[service].cpu.push(Number(s.CPUPerc.replace('%', '')));
     acc[service].mem.push(parseMemory(s.MemUsage));
@@ -386,6 +389,7 @@ export interface ScenarioResult {
   achievedRps: number;
   dropped: number;
   errorRatePct: number;
+  serverErrors: number;
   usage: Record<string, ContainerUsage>;
   gates: Gate[];
   details: string[];
@@ -639,21 +643,26 @@ export function evaluate(s: ScenarioData, measureSeconds: number): ScenarioResul
       } else {
         gates.push(onlyStatuses(s, ['200']));
         gates.push(...reconcileRequests(s, ['bench-redis-plain']));
+        const unavailable = gatewayDelta(s, 'pulsegate_rate_limiter_unavailable_total', {
+          route: 'bench-redis-plain',
+        });
+        details.push(
+          `RATE_LIMITER_UNAVAILABLE (fail-closed 503) across both instances: ${String(unavailable)}`,
+        );
       }
+      details.push(
+        Object.entries(s.usage)
+          .filter(([service]) => service.startsWith('gateway') || service === 'redis')
+          .map(
+            ([service, u]) =>
+              `${service} CPU avg/max ${u.cpuAvgPct.toFixed(1)} / ${u.cpuMaxPct.toFixed(1)} %`,
+          )
+          .join('; '),
+      );
       break;
     }
     case 'k9': {
-      const seconds = [...s.raw.perSecond].sort(([a], [b]) => a - b);
-      const start = seconds[0]?.[0] ?? 0;
-      const breach = seconds.find(([, b]) => {
-        const sorted = [...b.durations].sort((x, y) => x - y);
-        return percentile(sorted, 0.99) > 100 || b.errors / b.durations.length > 0.01;
-      });
-      details.push(
-        breach === undefined
-          ? 'p99 stayed ≤ 100 ms and server errors ≤ 1 % in every second of the ramp'
-          : `first second with p99 > 100 ms or errors > 1 %: t+${String(breach[0] - start)} s, ${String(breach[1].durations.length)} responses completed in that second`,
-      );
+      details.push(describeSaturation(s.raw.perSecond));
       break;
     }
     default:
@@ -680,6 +689,7 @@ export function evaluate(s: ScenarioData, measureSeconds: number): ScenarioResul
         : count / measureSeconds,
     dropped: summary0(s.summary, 'dropped_iterations{phase:measure}', 'count'),
     errorRatePct: total === 0 ? Number.NaN : (serverErrors / total) * 100,
+    serverErrors,
     usage: s.usage,
     gates,
     details,
@@ -697,6 +707,62 @@ function summary0(summary: K6Summary, metric: string, stat: string): number {
   return value ?? 0;
 }
 
+/** Consecutive breaching seconds that count as saturation rather than a transient stall. */
+export const SATURATION_SECONDS = 3;
+
+/**
+ * K9 per second: a second breaches when p99 > 100 ms or server errors > 1 %. Isolated breaches are reported as
+ * stalls; saturation needs SATURATION_SECONDS consecutive breaching seconds. The last second is partial (drain) and is
+ * reported separately rather than judged.
+ */
+export function describeSaturation(
+  perSecond: Map<number, { durations: number[]; errors: number }>,
+): string {
+  const seconds = [...perSecond].sort(([a], [b]) => a - b);
+  const start = seconds[0]?.[0] ?? 0;
+  const full = seconds.slice(0, -1);
+  const breaching = full
+    .filter(([, b]) => {
+      const sorted = [...b.durations].sort((x, y) => x - y);
+      return percentile(sorted, 0.99) > 100 || b.errors / b.durations.length > 0.01;
+    })
+    .map(([second, b]) => ({
+      t: second - start,
+      completed: b.durations.length,
+      p99: percentile(
+        [...b.durations].sort((x, y) => x - y),
+        0.99,
+      ),
+      errors: b.errors,
+    }));
+  let run = 0;
+  let sustainedAt: number | undefined;
+  let previousT = Number.NaN;
+  for (const { t } of breaching) {
+    run = t === previousT + 1 ? run + 1 : 1;
+    previousT = t;
+    if (run >= SATURATION_SECONDS && sustainedAt === undefined)
+      sustainedAt = t - SATURATION_SECONDS + 1;
+  }
+  const lastFull = full.at(-1);
+  const peak = lastFull === undefined ? 0 : lastFull[1].durations.length;
+  const list = breaching
+    .map(
+      (b) =>
+        `t+${String(b.t)} s (${String(b.completed)} completed, p99 ${b.p99.toFixed(1)} ms, ${String(b.errors)} errors)`,
+    )
+    .join('; ');
+  if (sustainedAt !== undefined) {
+    return `sustained breach (≥ ${String(SATURATION_SECONDS)} consecutive seconds of p99 > 100 ms or errors > 1 %) from t+${String(sustainedAt)} s. Breaching seconds: ${list}`;
+  }
+  return (
+    `no sustained breach in the tested range: the last full second completed ${String(peak)} responses. ` +
+    (breaching.length === 0
+      ? 'No second breached.'
+      : `Isolated breaching seconds (transient stalls, not saturation): ${list}.`)
+  );
+}
+
 // ---- Rendering --------------------------------------------------------------------------------------------------
 
 export function table(header: string[], rows: string[][]): string {
@@ -705,6 +771,15 @@ export function table(header: string[], rows: string[][]): string {
     `|${header.map(() => '---').join('|')}|`,
     ...rows.map((r) => `| ${r.join(' | ')} |`),
   ].join('\n');
+}
+
+/**
+ * Server errors as a count with a percentage precise enough not to round a real error away (1 of 37,491 is
+ * "1 (0.0027 %)", never "0.00 %").
+ */
+export function formatErrors(count: number, pct: number, label: string): string {
+  num(pct, 0, `${label} errors`);
+  return count === 0 ? '0' : `${String(count)} (${pct.toPrecision(2)} %)`;
 }
 
 /** Formats a measured number; a missing value stops the report (never an invented or blank number). */
@@ -822,6 +897,7 @@ export function render(
         'gateway CPU avg/max %',
         'gateway mem max MiB',
         'orders-mock CPU avg %',
+        'k6 CPU avg/max %',
       ],
       results.map((r) => {
         const gw = r.usage['gateway'];
@@ -835,7 +911,7 @@ export function render(
           num(r.latency.p95, 2, `${r.name} p95`),
           num(r.latency.p99, 2, `${r.name} p99`),
           num(r.latency.max, 2, `${r.name} max`),
-          `${num(r.errorRatePct, 2, `${r.name} errors`)} %`,
+          formatErrors(r.serverErrors, r.errorRatePct, r.name),
           gw === undefined
             ? 'n/a (no gateway in path)'
             : `${num(gw.cpuAvgPct, 1, 'cpu')} / ${num(gw.cpuMaxPct, 1, 'cpu')}`,
@@ -843,13 +919,17 @@ export function render(
           r.usage['orders-mock'] === undefined
             ? 'n/a'
             : num(r.usage['orders-mock'].cpuAvgPct, 1, 'mock cpu'),
+          r.usage['k6'] === undefined
+            ? 'n/a'
+            : `${num(r.usage['k6'].cpuAvgPct, 1, 'k6 cpu')} / ${num(r.usage['k6'].cpuMaxPct, 1, 'k6 cpu')}`,
         ];
       }),
     ),
   );
   lines.push('');
   lines.push(
-    '`dropped` = iterations k6 could not start at the offered rate (the open model reports them instead of hiding ' +
+    '`server errors` = responses with status 5xx or no response, as a count (and share). ' +
+      '`dropped` = iterations k6 could not start at the offered rate (the open model reports them instead of hiding ' +
       'them). CPU % is as reported by `docker stats` (100 % = one CPU), sampled about once a second; in K0 the gateway ' +
       'is idle (not in the path).',
   );

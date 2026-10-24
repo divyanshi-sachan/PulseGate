@@ -347,3 +347,15 @@ Format: date · goal · what changed · decisions (ADR links) · open threads.
 - **Found:** achieved-rate undercount for variable-length scenarios (fixed); quick-profile tail latencies unstable (by
   design not published).
 - **Next:** step 4, a full-profile run on this Mac with the committed report.
+
+## 2026-10-24 · Real-data testing, step 4: first full benchmark run
+- **Ran:** full profile, all scenarios (about 20 min), plus 2 full K8 repeats. Reports committed under
+  `benchmarks/reports/` (3 runs). First run: 104 gates passed, 2 failed (K8-tput-2: 1 × RATE_LIMITER_UNAVAILABLE).
+- **Found:** intermittent fail-closed 503s (1, 0, 0, 0, 12, 0 across 6 windows) correlated with ~94–102 ms event-loop
+  stalls, also on an idle instance, which suggests Docker Desktop VM pauses plus the 50 ms Redis command timeout →
+  Q15. K7: the breaker opened 3 times under 20 % random failures because retries count per attempt (configuration
+  trade-off, documented). K9: no sustained saturation up to ~4,000 rps; one isolated 196 ms stall. Q13: no stampede
+  possible in these scenarios, so it needs a dedicated one.
+- **Changed:** report generator: precise error counts, stall vs saturation in K9, per-instance CPU and limiter-unavailable
+  counts in K8, k6 CPU sampling (3 new tests, 19 in total); ADR-0047; Q15 added and Q13 reopened; README benchmark
+  section (numbers copied from the report).

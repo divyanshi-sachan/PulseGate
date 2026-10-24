@@ -5,7 +5,9 @@ import { gzipSync } from 'node:zlib';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   acceptedInterval,
+  describeSaturation,
   evaluate,
+  formatErrors,
   generate,
   metricDelta,
   num,
@@ -61,8 +63,18 @@ describe('parsing measured files', () => {
         t: 2,
         s: { Name: 'pulsegate-bench-gateway-1', CPUPerc: '30.00%', MemUsage: '80MiB / 512MiB' },
       }),
+      JSON.stringify({
+        t: 2,
+        s: {
+          Name: 'pulsegate-bench-k6-run-9f3c2a1b',
+          CPUPerc: '150.00%',
+          MemUsage: '90MiB / 1GiB',
+        },
+      }),
       '',
     ]);
+    // A one-off `compose run` container is reported as k6.
+    expect(usage['k6']).toMatchObject({ samples: 1, cpuMaxPct: 150 });
     expect(usage['gateway']).toEqual({
       samples: 2,
       cpuAvgPct: 20,
@@ -76,6 +88,40 @@ describe('parsing measured files', () => {
     expect(percentile(values, 0.99)).toBe(99);
     expect(percentile(values, 0.5)).toBe(50);
     expect(percentile([], 0.5)).toBeNaN();
+  });
+});
+
+describe('saturation ramp (K9)', () => {
+  const second = (n: number, slowMs = 0, errors = 0) => ({
+    durations: Array.from({ length: n }, (_, i) => (i === 0 && slowMs > 0 ? slowMs : 1)).concat(
+      slowMs > 0 ? Array<number>(Math.ceil(n / 50)).fill(slowMs) : [],
+    ),
+    errors,
+  });
+
+  it('reports an isolated slow second as a stall, not as saturation', () => {
+    const run = new Map([
+      [100, second(100)],
+      [101, second(200, 250)],
+      [102, second(300)],
+      [103, second(50)], // partial last second: never judged
+    ]);
+    const text = describeSaturation(run);
+    expect(text).toContain(
+      'no sustained breach in the tested range: the last full second completed 300 responses',
+    );
+    expect(text).toContain('Isolated breaching seconds (transient stalls, not saturation): t+1 s');
+  });
+
+  it('reports saturation only after 3 consecutive breaching seconds', () => {
+    const run = new Map([
+      [0, second(100)],
+      [1, second(200, 0, 5)],
+      [2, second(300, 0, 10)],
+      [3, second(400, 0, 20)],
+      [4, second(10)],
+    ]);
+    expect(describeSaturation(run)).toMatch(/^sustained breach .* from t\+1 s/);
   });
 });
 
@@ -191,6 +237,12 @@ describe('K4 reconciliation gates', () => {
 });
 
 describe('honesty rules', () => {
+  it('never rounds a real server error away', () => {
+    expect(formatErrors(1, (1 / 37_491) * 100, 'k8')).toBe('1 (0.0027 %)');
+    expect(formatErrors(0, 0, 'k1')).toBe('0');
+    expect(() => formatErrors(0, Number.NaN, 'k1')).toThrow('missing measured value');
+  });
+
   it('refuses to format a missing measured value', () => {
     expect(() => num(Number.NaN, 2, 'k1 p99')).toThrow('missing measured value: k1 p99');
     expect(num(1.234, 2, 'x')).toBe('1.23');

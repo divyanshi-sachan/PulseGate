@@ -51,3 +51,4 @@ Accepted ADRs **override** the spec documents where they conflict. Create new on
 | [0044](0044-deterministic-fault-scenarios.md) | Deterministic fault scenarios in Docker (real-data testing, step 1) | Accepted |
 | [0045](0045-real-public-api-smoke-tests.md) | Real public API smoke tests (real-data testing, step 2) | Accepted |
 | [0046](0046-k6-performance-suite.md) | k6 performance suite against the mock upstreams (real-data testing, step 3) | Accepted |
+| [0047](0047-first-benchmark-results.md) | First full benchmark run and its findings (real-data testing, step 4) | Accepted (findings; Q13, Q15 open) |
