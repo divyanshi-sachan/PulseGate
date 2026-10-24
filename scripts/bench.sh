@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # k6 performance suite against the mock upstreams (docs/plans/real-data-testing.md §3, ADR-0046). Never touches
-# third-party APIs. BENCH_PROFILE=quick (default, minutes) or full (published reports). BENCH_ONLY=K4,K5 runs a subset.
+# third-party APIs. BENCH_PROFILE=quick (default, minutes) or full (published reports). BENCH_ONLY=K4,K5 runs a subset;
+# BENCH_K8_REPEAT=N repeats the Redis throughput windows (Q15).
 # Raw results stay in benchmarks/reports/raw/<run-id>/ (git-ignored). The stacks are always torn down.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -80,7 +81,9 @@ run_k6() { # name script [KEY=VALUE ...]
   snapshot "$name" before
   start_sampler "$name"
   local code=0
-  "${STACK[@]}" --profile bench run --rm --no-deps "${env_args[@]}" k6 run --quiet \
+  # As the calling user: k6 must read keys.json (0600) and write into the run directory. On Linux the image's own
+  # user can do neither (Docker Desktop on macOS hides this; CI found it).
+  "${STACK[@]}" --profile bench run --rm --no-deps --user "$(id -u):$(id -g)" "${env_args[@]}" k6 run --quiet \
     --out "json=/out/$name.k6.json.gz" "/scripts/$script" >"$BENCH_RUN_DIR/$name.k6.log" 2>&1 || code=$?
   stop_sampler
   snapshot "$name" after
@@ -134,8 +137,12 @@ if wanted K8; then
   STACK=("${REDIS[@]}")
   "${REDIS[@]}" up -d --build --wait
   run_k6 k8-shared redis.js MODE=shared
-  run_k6 k8-tput-1 redis.js MODE=throughput INSTANCES=1
-  run_k6 k8-tput-2 redis.js MODE=throughput INSTANCES=2
+  # BENCH_K8_REPEAT=N repeats both throughput windows N times (Q15: how often fail-closed 503s occur).
+  for n in $(seq 1 "${BENCH_K8_REPEAT:-1}"); do
+    suffix=$([ "${BENCH_K8_REPEAT:-1}" = 1 ] && echo "" || echo "-r$n")
+    run_k6 "k8-tput-1$suffix" redis.js MODE=throughput INSTANCES=1
+    run_k6 "k8-tput-2$suffix" redis.js MODE=throughput INSTANCES=2
+  done
   "${REDIS[@]}" down -v --remove-orphans >/dev/null 2>&1
 fi
 

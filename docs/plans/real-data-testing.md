@@ -200,3 +200,9 @@ only the mocks on the Compose network.
 ## 8. Not in this part
 License, image publishing, release docs, hosted demo (part B, deferred). Performance tuning, unless the measurements
 show a defect.
+
+## 9. Follow-up: Q15 measurement (2026-10-24)
+User: measure on native Linux before choosing between raising the `commandTimeoutMs` default and documenting a higher
+value for fail-closed. No native Linux machine is available locally, so the measurement runs on GitHub Actions
+(`bench.yml`, `only=K8`, `k8_repeat=5`) next to the same run on the Mac. Reports now carry a per-window table of each
+instance's max event-loop stall and the fail-closed 503s. The decision rule is fixed in OPEN_QUESTIONS Q15.

@@ -88,3 +88,10 @@
 - Step 4: one full-profile run on this Mac, with the generated report and summary committed, plus findings (including
   request deduplication, Q13, if K4/K7 show a reason).
 - Performance thresholds become gates only after several full runs establish a repeatable baseline (review point 6).
+
+## Amendment (2026-10-24): run k6 as the calling user
+- CI's `k6-inspect.sh` step failed on Linux (`stat /out/keys.json: permission denied`), because the k6 image's own user
+  can't read a 0700 `mktemp` directory or the 0600 `keys.json`. The same problem would also have blocked `bench.sh`
+  from writing results. Docker Desktop on macOS hides file permissions, so local runs passed.
+- Both scripts now run k6 with `--user "$(id -u):$(id -g)"`. The failure and the fix were reproduced with a Docker
+  volume that has real Linux permissions (as the image user: permission denied; as the owner: reads and writes).

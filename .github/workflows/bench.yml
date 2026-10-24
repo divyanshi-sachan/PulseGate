@@ -16,6 +16,10 @@ on:
         description: 'Optional subset, e.g. K4,K5 (empty = all)'
         required: false
         default: ''
+      k8_repeat:
+        description: 'Repeat the K8 Redis throughput windows N times (Q15)'
+        required: false
+        default: '1'
 
 concurrency:
   group: bench
@@ -38,6 +42,8 @@ jobs:
         env:
           BENCH_PROFILE: ${{ inputs.profile }}
           BENCH_ONLY: ${{ inputs.only }}
+          BENCH_K8_REPEAT: ${{ inputs.k8_repeat }}
+          BENCH_HOST_LABEL: gha-ubuntu
       - name: Raw results and report
         if: always()
         uses: actions/upload-artifact@v4

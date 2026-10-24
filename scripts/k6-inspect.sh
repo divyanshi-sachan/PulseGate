@@ -13,7 +13,9 @@ for script in benchmarks/k6/*.js; do
   name=$(basename "$script")
   [ "$name" = lib.js ] && continue
   for profile in quick full; do
-    if docker run --rm -e BENCH_PROFILE=$profile -v "$PWD/benchmarks/k6:/scripts:ro" -v "$out:/out" "$IMAGE" \
+    # As the calling user: on Linux the image's own user can't read a 0700 mktemp directory (Docker Desktop hides this).
+    if docker run --rm --user "$(id -u):$(id -g)" -e BENCH_PROFILE=$profile \
+      -v "$PWD/benchmarks/k6:/scripts:ro" -v "$out:/out" "$IMAGE" \
       inspect "/scripts/$name" >/dev/null 2>"$out/err"; then
       echo "ok   $name ($profile)"
     else

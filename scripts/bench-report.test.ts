@@ -236,6 +236,42 @@ describe('K4 reconciliation gates', () => {
   });
 });
 
+describe('Q15 evidence per Redis window', () => {
+  it("reports each instance's max event-loop stall and the fail-closed 503s", () => {
+    const scenario = k4Scenario();
+    const k8: ScenarioData = {
+      ...scenario,
+      name: 'k8-tput-1-r2',
+      raw: {
+        ...scenario.raw,
+        responses: [
+          { tags: { route: 'bench-redis-plain', status: '200' } },
+          { tags: { route: 'bench-redis-plain', status: '503' } },
+        ],
+      },
+      snap: {
+        ...scenario.snap,
+        metricsAfter: parsePrometheus(
+          [
+            'pulsegate_nodejs_eventloop_lag_max_seconds 0.0941',
+            'pulsegate_rate_limiter_unavailable_total{route="bench-redis-plain"} 1',
+            'pulsegate_requests_total{route="bench-redis-plain",status_class="2xx",code="none"} 1',
+            'pulsegate_requests_total{route="bench-redis-plain",status_class="5xx",code="RATE_LIMITER_UNAVAILABLE"} 1',
+          ].join('\n'),
+        ),
+        metrics2After: parsePrometheus('pulsegate_nodejs_eventloop_lag_max_seconds 0.0238'),
+      },
+    };
+    const result = evaluate(k8, 10);
+    expect(result.title).toBe('K8 Redis limiter: throughput, 1 instance');
+    expect(result.eventLoopStallMs.gateway).toBeCloseTo(94.1, 6);
+    expect(result.eventLoopStallMs['gateway-2']).toBeCloseTo(23.8, 6);
+    expect(result.limiterUnavailable).toBe(1);
+    // The strict gate still fails on the 503: the evidence explains it, it doesn't excuse it.
+    expect(result.gates.find((g) => g.name === 'statuses only 200')?.pass).toBe(false);
+  });
+});
+
 describe('honesty rules', () => {
   it('never rounds a real server error away', () => {
     expect(formatErrors(1, (1 / 37_491) * 100, 'k8')).toBe('1 (0.0027 %)');

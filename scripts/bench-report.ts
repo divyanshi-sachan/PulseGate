@@ -391,6 +391,13 @@ export interface ScenarioResult {
   errorRatePct: number;
   serverErrors: number;
   usage: Record<string, ContainerUsage>;
+  /**
+   * Max event-loop stall per gateway instance during the scenario, ms (prom-client resets the gauge on every scrape, so
+   * the "after" scrape covers exactly the scenario since the "before" scrape). Q15 evidence.
+   */
+  eventLoopStallMs: { gateway: number; 'gateway-2'?: number };
+  /** Fail-closed 503s (RATE_LIMITER_UNAVAILABLE) during the scenario, all instances. */
+  limiterUnavailable: number;
   gates: Gate[];
   details: string[];
 }
@@ -407,6 +414,13 @@ const TITLES: Record<string, string> = {
   k8: 'K8 Redis limiter, 2 instances',
   k9: 'K9 saturation ramp (informational)',
 };
+
+function titleOf(name: string, kind: string): string {
+  if (name === 'k8-shared') return 'K8 Redis limiter: one subject shared by 2 instances';
+  if (name.startsWith('k8-tput-1')) return 'K8 Redis limiter: throughput, 1 instance';
+  if (name.startsWith('k8-tput-2')) return 'K8 Redis limiter: throughput, 2 instances';
+  return TITLES[kind] ?? name;
+}
 
 export function evaluate(s: ScenarioData, measureSeconds: number): ScenarioResult {
   const kind = s.name.slice(0, 2);
@@ -672,7 +686,7 @@ export function evaluate(s: ScenarioData, measureSeconds: number): ScenarioResul
   const count = summaryValue(s.summary, 'http_reqs{phase:measure}', 'count');
   return {
     name: s.name,
-    title: TITLES[kind] ?? s.name,
+    title: titleOf(s.name, kind),
     offered: '',
     latency: {
       avg: summaryValue(s.summary, 'http_req_duration{phase:measure}', 'avg'),
@@ -691,6 +705,16 @@ export function evaluate(s: ScenarioData, measureSeconds: number): ScenarioResul
     errorRatePct: total === 0 ? Number.NaN : (serverErrors / total) * 100,
     serverErrors,
     usage: s.usage,
+    eventLoopStallMs: {
+      gateway: sumMetric(s.snap.metricsAfter, 'pulsegate_nodejs_eventloop_lag_max_seconds') * 1000,
+      ...(s.snap.metrics2After.length > 0
+        ? {
+            'gateway-2':
+              sumMetric(s.snap.metrics2After, 'pulsegate_nodejs_eventloop_lag_max_seconds') * 1000,
+          }
+        : {}),
+    },
+    limiterUnavailable: gatewayDelta(s, 'pulsegate_rate_limiter_unavailable_total', {}),
     gates,
     details,
   };
@@ -818,7 +842,7 @@ const OFFERED: Record<string, (name: string, profile: string) => string> = {
   k8: (n, p) =>
     n === 'k8-shared'
       ? '40 rps, one subject, alternating instances'
-      : `${p === 'full' ? '500' : '100'} rps, ${n.endsWith('-2') ? '2 instances' : '1 instance'}`,
+      : `${p === 'full' ? '500' : '100'} rps, ${n.startsWith('k8-tput-2') ? '2 instances' : '1 instance'}`,
   k9: () => '100 → 4,000 rps over 90 s',
 };
 
@@ -951,6 +975,50 @@ export function render(
   lines.push('');
 
   // K0 vs K1 overhead, only where both reached the offered rate.
+  // Q15: event-loop stalls vs fail-closed limiter 503s, for every Redis throughput window (including repeats).
+  const k8 = results.filter((r) => r.name.startsWith('k8-tput-'));
+  if (k8.length > 0) {
+    lines.push('## Redis limiter: event-loop stalls vs fail-closed 503s (Q15)');
+    lines.push('');
+    lines.push(
+      'Per window: the longest event-loop stall of each gateway instance (`pulsegate_nodejs_eventloop_lag_max_seconds`, ' +
+        'reset at every scrape) and the `RATE_LIMITER_UNAVAILABLE` responses. The limiter command timeout is ' +
+        '`rateLimit.redis.commandTimeoutMs` (default 50 ms) with `redisFailurePolicy: closed`.',
+    );
+    lines.push('');
+    lines.push(
+      table(
+        [
+          'window',
+          'measured requests',
+          'max stall gateway ms',
+          'max stall gateway-2 ms',
+          'limiter 503s',
+        ],
+        k8.map((r) => [
+          r.name,
+          String(r.latency.count),
+          num(r.eventLoopStallMs.gateway, 1, `${r.name} stall`),
+          r.eventLoopStallMs['gateway-2'] === undefined
+            ? 'n/a'
+            : num(r.eventLoopStallMs['gateway-2'], 1, `${r.name} stall 2`),
+          String(r.limiterUnavailable),
+        ]),
+      ),
+    );
+    const windows = k8.length;
+    const affected = k8.filter((r) => r.limiterUnavailable > 0).length;
+    const stalled = k8.filter(
+      (r) => Math.max(r.eventLoopStallMs.gateway, r.eventLoopStallMs['gateway-2'] ?? 0) >= 50,
+    ).length;
+    lines.push('');
+    lines.push(
+      `${String(windows)} windows: ${String(affected)} with limiter 503s (total ${String(k8.reduce((n, r) => n + r.limiterUnavailable, 0))}), ` +
+        `${String(stalled)} with a stall ≥ 50 ms on an instance.`,
+    );
+    lines.push('');
+  }
+
   const k0 = results.filter((r) => r.name.startsWith('k0-'));
   if (k0.length > 0) {
     lines.push('## Gateway overhead (K1 − K0 at equal offered rate)');

@@ -359,3 +359,15 @@ Format: date · goal · what changed · decisions (ADR links) · open threads.
 - **Changed:** report generator: precise error counts, stall vs saturation in K9, per-instance CPU and limiter-unavailable
   counts in K8, k6 CPU sampling (3 new tests, 19 in total); ADR-0047; Q15 added and Q13 reopened; README benchmark
   section (numbers copied from the report).
+
+## 2026-10-24 · Q15 measurement, part 1 (Mac) and the CI fix
+- **Committed for the user:** step 4 as `e764f87` (one-time request).
+- **Changed:** reports gain a per-window "event-loop stalls vs fail-closed 503s" table; `BENCH_K8_REPEAT`;
+  `bench.yml` `k8_repeat` input with the `gha-ubuntu` label; the Q15 decision rule is fixed in OPEN_QUESTIONS before
+  measuring; the 3 committed reports are regenerated from unchanged raw files.
+- **Ran:** Mac, 10 Redis windows: 2 with limiter 503s (5 total), 7 with stalls ≥ 50 ms (max 163.7 ms).
+- **Found via gh (now signed in):** CI on `9458b23` failed in `k6-inspect.sh` with a Linux permission error. Reproduced
+  with a Docker volume, fixed with `--user` in `k6-inspect.sh` and `bench.sh` (ADR-0046 amendment); verified locally
+  with K5 (14/14 gates).
+- **Next:** the user pushes; then `gh workflow run bench.yml` with `only=K8, k8_repeat=5, profile=full`, and the Q15
+  decision per the rule.
