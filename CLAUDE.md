@@ -144,6 +144,7 @@ pnpm --filter @pulsegate/dashboard dev   # dashboard on Vite, proxying /admin/ap
 pnpm bundle:check     # after pnpm build: dashboard JS budget (initial ≤ 120 KB, total ≤ 260 KB gz) + no inline code (also in CI)
 pnpm dev:dashboard    # docker compose stack + admin listener on 127.0.0.1:9090 (local-only ADMIN_TOKEN, see README)
 pnpm test:e2e         # fresh Docker stack + cross-container admin check + Playwright, always torn down (also in CI)
+pnpm test:real        # opt-in: R1–R9 through the gateway against Postman Echo + httpbin, ≤ 30 requests (REAL_API_ONLY=echo|httpbin)
 scripts/smoke-distributed.sh      # with dev:distributed running: exactly 30/100 pass across 2 instances
 ```
 

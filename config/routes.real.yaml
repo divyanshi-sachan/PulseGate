@@ -1,0 +1,45 @@
+# Real public API smoke tests (docs/plans/real-data-testing.md §1, ADR-0045). Correctness only, never load:
+# tests/real keeps every run at or below 30 upstream requests, sequential and paced.
+# Ports are ignored by the tests (they listen on ephemeral ports).
+
+upstreams:
+  - id: postman-echo
+    baseUrl: 'https://postman-echo.com'
+  - id: httpbin
+    baseUrl: 'https://httpbin.org'
+
+routes:
+  # R1-R3, R5, R8: authenticated, cache enabled (Postman Echo sets cookies, so nothing may ever be stored).
+  - id: real-echo
+    pathPrefix: '/real/echo'
+    methods: ['GET', 'POST']
+    upstreamId: postman-echo
+    stripPrefix: true
+    auth: { required: true }
+    rateLimit: { capacity: 20, refillRatePerSecond: 1 }
+    timeoutMs: 10000
+    retries: { maxAttempts: 1 } # never retry against a third-party API
+    cache: { enabled: true, ttlSeconds: 60 }
+
+  # R6: capacity 3, practically no refill during a run.
+  - id: real-limited
+    pathPrefix: '/real/limited'
+    methods: ['GET']
+    upstreamId: postman-echo
+    stripPrefix: true
+    auth: { required: false }
+    rateLimit: { capacity: 3, refillRatePerSecond: 0.001 }
+    timeoutMs: 10000
+    retries: { maxAttempts: 1 }
+
+  # R4, R7: response integrity and an upstream-permitted cache (httpbin /cache/60 sends max-age=60).
+  - id: real-httpbin
+    pathPrefix: '/real/httpbin'
+    methods: ['GET']
+    upstreamId: httpbin
+    stripPrefix: true
+    auth: { required: false }
+    rateLimit: { capacity: 20, refillRatePerSecond: 1 }
+    timeoutMs: 10000
+    retries: { maxAttempts: 1 }
+    cache: { enabled: true, ttlSeconds: 120, scope: 'shared' }

@@ -49,3 +49,4 @@ Accepted ADRs **override** the spec documents where they conflict. Create new on
 | [0042](0042-dashboard-charts-and-screens.md) | Dashboard charts, screens and polling; Recharts confirmed by measurement (dashboard step 5) | Accepted (review details) |
 | [0043](0043-dashboard-docker-e2e-ci.md) | Dashboard in Docker, Playwright end to end, CI (dashboard step 6) | Accepted (review details) |
 | [0044](0044-deterministic-fault-scenarios.md) | Deterministic fault scenarios in Docker (real-data testing, step 1) | Accepted |
+| [0045](0045-real-public-api-smoke-tests.md) | Real public API smoke tests (real-data testing, step 2) | Accepted |

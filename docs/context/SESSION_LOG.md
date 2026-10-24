@@ -324,3 +324,14 @@ Format: date · goal · what changed · decisions (ADR links) · open threads.
   ADR-0044.
 - **Ran:** `pnpm test:e2e` twice (4/4 passed, transitions found, stack removed); `pnpm check` (524 passed); mutations 69/69.
 - **Next:** step 2, real public API smoke tests (Postman Echo + httpbin, ≤ 30 requests per run, opt-in).
+
+## 2026-10-24 · Real-data testing, step 2: real public API smoke tests
+- **Changed:** opt-in `pnpm test:real` (`vitest.real.config.ts`, `tests/real/public-apis.real.ts`, `config/routes.real.yaml`)
+  with checks R1–R9 + R2b, a ≤ 30-request budget enforced in code, 250 ms pacing, skip-with-reason for unavailable
+  providers, `REAL_API_ONLY`; workflow `real-apis.yml` (manual dispatch only); ADR-0045.
+- **Ran:** 10/10 passed twice (16 provider requests each); with `REAL_API_ONLY=httpbin`: 4 passed, 6 skipped with reason;
+  with `REAL_API_ONLY=` (empty): 10/10. `vitest list` confirms the default suite has no `tests/real` file.
+- **Found:** both providers' edges strip `X-Request-ID`/`X-Forwarded-For` even on direct requests; R2 rewritten,
+  R2b adds a control-backed `X-API-Key` check. A workflow bug (empty input excluding both providers) was fixed before
+  shipping.
+- **Next:** step 3, the k6 suite against the mocks.

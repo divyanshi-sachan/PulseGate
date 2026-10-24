@@ -6,7 +6,8 @@ _Last updated: 2026-10-24 (Phase 5 complete: cache, metrics, dashboard)_
 **Phase 5 — Caching and observability: complete** (cache, `/metrics`, admin API and dashboard; ADR-0036–0043).
 The dashboard e2e passes locally against Docker; the new CI `e2e` job runs on the next push. Next: **Phase 6**, starting with
 **testing on real data** per `docs/plans/real-data-testing.md` (approved): step 1, deterministic Docker faults F1–F6,
-is **done** (ADR-0044); next is step 2, the real public API smoke tests R1–R9. License and release work deferred.
+is **done** (ADR-0044); step 2, real public API smoke tests R1–R9, is **done** (ADR-0045, opt-in `pnpm test:real`);
+next is step 3, the k6 suite against the mocks. License and release work deferred.
 
 ## Done
 - Product, system-design and implementation specs written.

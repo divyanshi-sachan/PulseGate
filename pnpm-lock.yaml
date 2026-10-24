@@ -14,6 +14,15 @@ importers:
       '@playwright/test':
         specifier: 1.64.1
         version: 1.64.1
+      '@pulsegate/admin-contract':
+        specifier: workspace:*
+        version: link:packages/admin-contract
+      '@pulsegate/config':
+        specifier: workspace:*
+        version: link:packages/config
+      '@pulsegate/gateway':
+        specifier: workspace:*
+        version: link:apps/gateway
       '@pulsegate/observability':
         specifier: workspace:*
         version: link:packages/observability

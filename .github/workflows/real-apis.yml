@@ -1,0 +1,41 @@
+# Real public API smoke tests (ADR-0045): opt-in only, never on push or pull request. Correctness only, at most
+# 30 requests to the providers per run (Postman Echo, httpbin); a provider that is down is reported as skipped.
+name: Real public APIs
+
+on:
+  workflow_dispatch:
+    inputs:
+      provider:
+        description: 'Limit the run to one provider (empty = both)'
+        required: false
+        default: ''
+        type: choice
+        options: ['', echo, httpbin]
+
+concurrency:
+  group: real-apis
+  cancel-in-progress: false
+
+jobs:
+  real-apis:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26.4.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: R1-R9 through PulseGate against public APIs
+        run: pnpm test:real
+        env:
+          REAL_API_ONLY: ${{ inputs.provider }}
+      - name: Test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: real-apis-report
+          path: test-results/real-apis.json
+          retention-days: 30
