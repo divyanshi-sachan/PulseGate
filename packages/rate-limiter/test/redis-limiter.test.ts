@@ -78,8 +78,22 @@ describe.skipIf(redis === undefined)(
       expect(await c.hgetall(redisKey)).toMatchObject({ tokens: '4' });
       const ttl = await c.pttl(redisKey);
       // One token missing at 10/s = 100 ms to refill, plus the 1 s margin.
-      expect(ttl).toBeGreaterThan(0);
+      expect(ttl).toBeGreaterThan(1000);
       expect(ttl).toBeLessThanOrEqual(1100);
+    });
+
+    it('never expires a bucket before it would have refilled to capacity', async () => {
+      const key = freshKey();
+      const c = client();
+      const limiter = new RedisTokenBucketLimiter(c);
+      const policy = { capacity: 5, refillRatePerSecond: 10 };
+      for (let i = 0; i < 5; i++) await limiter.consume(key, policy); // drained: full again after 500 ms
+      const ttl = await c.pttl(redisBucketKey(key));
+      // Time to full (500 ms) + 1 s margin, minus at most a few ms of test latency.
+      expect(ttl).toBeGreaterThan(1450);
+      expect(ttl).toBeLessThanOrEqual(1500);
+      // Still drained inside the refill window: expiry can't hand out a fresh, full bucket early.
+      expect((await limiter.consume(key, policy)).allowed).toBe(false);
     });
 
     it('reloads the script after SCRIPT FLUSH (NOSCRIPT fallback)', async () => {

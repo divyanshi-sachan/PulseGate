@@ -23,7 +23,8 @@
     "dev:down": "docker compose down",
     "keygen": "node --conditions=@pulsegate/source apps/gateway/src/keygen.ts",
     "dev:distributed": "docker compose -f docker-compose.yml -f docker-compose.distributed.yml up --build",
-    "dev:distributed:down": "docker compose -f docker-compose.yml -f docker-compose.distributed.yml down"
+    "dev:distributed:down": "docker compose -f docker-compose.yml -f docker-compose.distributed.yml down",
+    "test:mutations": "node scripts/mutation-check.ts"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

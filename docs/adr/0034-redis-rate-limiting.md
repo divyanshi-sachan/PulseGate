@@ -1,6 +1,6 @@
 # ADR-0034: Redis-backed distributed rate limiting (Phase 4)
 
-- **Status:** Accepted (four questions answered by the user; Claude-chosen details marked)
+- **Status:** Accepted. Reviewed by the user on 2026-10-23: all four decisions approved, with the amendments below.
 - **Date:** 2026-10-23
 - **Source:** Phase 4 design questions; ADR-0005 (Lua, server time, failure policy); ADR-0030 (readiness); tech_impl §5.3–5.4
 - **Builds on:** ADR-0032 (RateLimiter interface, keys, headers)
@@ -40,8 +40,26 @@ returns `[allowed, tokens]`. The gateway computes `remaining`, `retryAfterMs` an
 ## Alternatives considered
 See the question options: host/port config, unlimited fail-open, 429 for fail-closed, and an external `REDIS_URL` for tests.
 
+## Review amendments (2026-10-23, user)
+1. **TTL:** keep the 1 s margin. Tests now also assert the **lower** bound: TTL ≥ time-to-full + margin. A drained bucket
+   stays drained inside its refill window, so expiry or rounding can never hand out a full bucket early.
+2. **Credential redaction:** `REDIS_URL` is validated by `parseRedisUrl`, which never echoes the value. Node's URL
+   `TypeError` carries the full input, password included, in `input`, so it must not escape. Every Redis error string is
+   scrubbed of the URL and the password (raw, URL-encoded and decoded) before logging, and only `host:port` is logged. Tests:
+   malformed URL, wrong scheme, a wrong password against real Redis, and debug-level logs during an outage.
+3. **Startup fails** if Redis isn't reachable within `connectTimeoutMs`, in **both** policies. The gateway doesn't start in
+   local mode: `start()` throws `GatewayStartupError`, binds no ports, and `main.ts` exits 1 so the orchestrator restarts it.
+   *Supersedes the "startup continues with a warning" note below.*
+4. **Readiness:** an active `PING` on each probe, bounded by `commandTimeoutMs`. **Single-flight**: concurrent probes share
+   one ping. `/ready` reflects Redis in its body. Fail-closed returns 503 `{status:"not_ready", redis:"unavailable"}`. Fail-open
+   returns 200 `{status:"ready", redis:"unavailable", rateLimit:"degraded"}` (user choice: don't drain every instance at
+   once). `/health` stays 200 whenever the process is alive.
+5. **CI:** `.github/workflows/ci.yml` runs the full suite with `REQUIRE_REDIS_TESTS=1`, the curated mutation suite
+   (`pnpm test:mutations`, 16 mutations across ADRs 0019–0034), the production build, and the two-instance smoke test
+   (`scripts/smoke-distributed.sh`).
+
 ## Implementation notes (found while building)
-- **Startup waits for Redis**, bounded by `connectTimeoutMs`. Without this, a fresh instance rejected its first requests
+- *(Superseded by review amendment 3: startup now fails instead of continuing.)* **Startup waits for Redis**, bounded by `connectTimeoutMs`. Without this, a fresh instance rejected its first requests
   in fail-closed mode while the client was still connecting; in the first test run, six of 60 requests got 503. If Redis
   isn't up in time, startup continues with a warning, and the failure policy and readiness take over.
 - **Readiness actively `PING`s Redis** on each probe in fail-closed mode. Request-driven health alone could deadlock:

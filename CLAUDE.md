@@ -102,6 +102,8 @@ When changing config: update schema, ADR-0026, the example YAML and the defaults
 - Inject clocks (`now()`/monotonic) and randomness (jitter) — **tests use fake clocks, never sleeps.**
   Exception: real-Redis tests use the Redis server clock, so they use short real waits (ADR-0034).
 - Every component ships with unit tests covering its failure behavior (see system_design §15 table).
+- **Every new guarantee gets a mutation entry** in `scripts/mutation-check.ts` (re-introduce the bug, require a red suite).
+  CI (`.github/workflows/ci.yml`) runs check + mutations + build + the distributed smoke test.
 - Integration tests use real Redis (test container) and mock upstreams that can delay/reset/5xx.
 - Bound everything: maps, queues, retries, concurrency, body sizes. Enforce size limits while streaming, never by buffering.
 - **Never run `pnpm deploy` in the local checkout.** It turns `node_modules` into a production install and later
@@ -125,7 +127,9 @@ pnpm --filter @pulsegate/gateway dev   # run gateway from source (PULSEGATE_CONF
 pnpm dev:up           # docker compose up --build: gateway :8080 + orders/payments mocks (ADR-0029)
 pnpm dev:down         # docker compose down
 pnpm dev:distributed  # + Redis and a second gateway on :8081 sharing one budget (ADR-0034)
-REQUIRE_REDIS_TESTS=1 pnpm test   # fail instead of skipping when Docker/Redis is unavailable (use in CI)
+REQUIRE_REDIS_TESTS=1 pnpm test   # fail instead of skipping when Docker/Redis is unavailable (CI does this)
+pnpm test:mutations   # curated mutation suite: each re-introduced bug must fail the tests (also in CI)
+scripts/smoke-distributed.sh      # with dev:distributed running: exactly 30/100 pass across 2 instances
 ```
 
 ## Git workflow

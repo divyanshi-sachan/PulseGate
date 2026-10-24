@@ -39,7 +39,17 @@ const gateway = createGateway(config, {
   ...(clients === undefined ? {} : { clients }),
   ...(redisUrl === undefined ? {} : { redisUrl }),
 });
-await gateway.start();
+try {
+  await gateway.start();
+} catch (error) {
+  // e.g. Redis unreachable at boot (ADR-0034): exit non-zero so the orchestrator restarts us.
+  gateway.public.log.error(
+    { err: error instanceof Error ? error.message : String(error) },
+    'startup failed',
+  );
+  await gateway.close().catch(() => undefined);
+  process.exit(1);
+}
 
 for (const signal of ['SIGTERM', 'SIGINT'] as const) {
   process.once(signal, () => {

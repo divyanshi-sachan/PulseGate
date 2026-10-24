@@ -185,10 +185,13 @@ export function jsonBody(response: RawResponse): unknown {
 }
 
 /** Logger options that capture pino JSON lines in memory, for asserting on real log output. */
-export function captureLogs(): { options: GatewayOptions; lines: () => Record<string, unknown>[] } {
+export function captureLogs(level = 'info'): {
+  options: GatewayOptions;
+  lines: () => Record<string, unknown>[];
+} {
   const raw: string[] = [];
   return {
-    options: { logger: { level: 'info', stream: { write: (line: string) => raw.push(line) } } },
+    options: { logger: { level, stream: { write: (line: string) => raw.push(line) } } },
     lines: () => raw.map((line) => JSON.parse(line) as Record<string, unknown>),
   };
 }

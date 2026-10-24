@@ -33,6 +33,8 @@ import {
 import { resolveClientAddress, TrustedProxies } from './proxy/client-address.ts';
 import { CircuitOpenError, ClientAbortedError, ProxyService } from './proxy/proxy-service.ts';
 import { UpstreamRegistry } from './proxy/upstream-registry.ts';
+import { parseRedisUrl } from './redis/redis-url.ts';
+import { singleFlight } from './redis/single-flight.ts';
 import { parseRequestTarget } from './routing/request-target.ts';
 import { MethodNotAllowedError, RouteRegistry } from './routing/route-registry.ts';
 
@@ -337,25 +339,34 @@ function buildPublicServer(
   return app;
 }
 
-function buildOperationsServer(options: GatewayOptions, isReady: () => Promise<boolean>) {
+interface Readiness {
+  ready: boolean;
+  body: Record<string, string>;
+}
+
+function buildOperationsServer(options: GatewayOptions, readiness: () => Promise<Readiness>) {
   const app = fastify(baseOptions(options));
+  // Liveness only: healthy whenever the process can answer, regardless of dependencies (ADR-0030).
   app.get('/health', () => ({ status: 'ok' }));
-  app.get('/ready', async (_request, reply) =>
-    (await isReady()) ? { status: 'ready' } : reply.code(503).send({ status: 'not_ready' }),
-  );
+  app.get('/ready', async (_request, reply) => {
+    const { ready, body } = await readiness();
+    return reply.code(ready ? 200 : 503).send(body);
+  });
   return app;
 }
 
+/** Startup could not complete; the process should exit non-zero (ADR-0034 review). */
+export class GatewayStartupError extends Error {
+  override readonly name = 'GatewayStartupError';
+}
+
 /**
- * Waits (bounded by connectTimeoutMs) for the first Redis connection, so a fresh instance doesn't
- * reject its first requests. If Redis isn't up in time, startup continues and the failure policy
- * and readiness take over (ADR-0034).
+ * Waits for the first Redis connection, bounded by connectTimeoutMs. If Redis isn't reachable in time,
+ * startup **fails** in both policies instead of silently running on local limits (ADR-0034 review):
+ * the orchestrator restarts the instance and readiness never reports a half-configured gateway.
  */
-async function waitForRedis(
-  redis: Redis,
-  config: GatewayConfig,
-  log: FastifyBaseLogger,
-): Promise<void> {
+async function waitForRedis(parts: RedisLimiterParts, config: GatewayConfig): Promise<void> {
+  const { redis } = parts;
   if (redis.status === 'ready') return;
   const timeoutMs = config.rateLimit.redis.connectTimeoutMs;
   const connected = await new Promise<boolean>((resolve) => {
@@ -370,9 +381,9 @@ async function waitForRedis(
     redis.once('ready', onReady);
   });
   if (!connected) {
-    log.warn(
-      { connectTimeoutMs: timeoutMs },
-      'redis not reachable at startup; continuing with the configured failure policy',
+    redis.disconnect();
+    throw new GatewayStartupError(
+      `Redis at ${parts.target} was not reachable within ${String(timeoutMs)} ms (rateLimit.redis.connectTimeoutMs); refusing to start`,
     );
   }
 }
@@ -380,6 +391,8 @@ async function waitForRedis(
 interface RedisLimiterParts {
   redis: Redis;
   limiter: ResilientRateLimiter;
+  /** host:port only (ADR-0034). */
+  target: string;
 }
 
 /** Builds the Redis client and the failure-policy wrapper (ADR-0034). */
@@ -398,8 +411,8 @@ function buildRedisLimiter(
       },
     ]);
   }
-  // Only host:port is ever logged; the URL may contain credentials.
-  const target = new URL(redisUrl).host;
+  // Only host:port is ever logged; error text is scrubbed of the URL and credentials.
+  const { target, redact } = parseRedisUrl(redisUrl);
   const redis = new Redis(redisUrl, {
     commandTimeout: rateLimit.redis.commandTimeoutMs,
     connectTimeout: rateLimit.redis.connectTimeoutMs,
@@ -410,7 +423,7 @@ function buildRedisLimiter(
   });
   // Connection errors surface through health changes below; an unhandled 'error' event would crash.
   redis.on('error', (error: Error) => {
-    logRef.current?.debug({ redis: target, err: error.message }, 'redis connection error');
+    logRef.current?.debug({ redis: target, err: redact(error.message) }, 'redis connection error');
   });
   const limiter = new ResilientRateLimiter({
     primary: new RedisTokenBucketLimiter(redis),
@@ -423,14 +436,14 @@ function buildRedisLimiter(
           {
             redis: target,
             policy: rateLimit.redisFailurePolicy,
-            err: error instanceof Error ? error.message : String(error),
+            err: redact(error instanceof Error ? error.message : String(error)),
           },
           'redis rate limiter unavailable',
         );
       }
     },
   });
-  return { redis, limiter };
+  return { redis, limiter, target };
 }
 
 export function createGateway(config: GatewayConfig, options: GatewayOptions = {}): Gateway {
@@ -480,21 +493,29 @@ export function createGateway(config: GatewayConfig, options: GatewayOptions = {
           }
         }, options.sweepIntervalMs ?? SWEEP_INTERVAL_MS).unref()
       : undefined;
-  // Readiness (ADR-0030, ADR-0034): with fail-closed Redis, actively ping it on every probe, so a
-  // drained instance notices recovery even though it receives no traffic.
-  const isReady = async (): Promise<boolean> => {
-    if (!ready) return false;
-    if (redisParts === undefined || config.rateLimit.mode !== 'redis') return true;
-    if (config.rateLimit.redisFailurePolicy === 'open') return true;
+  // Readiness (ADR-0030, ADR-0034 review): actively ping Redis on each probe (bounded by commandTimeoutMs,
+  // one ping in flight at a time), so a drained instance notices recovery without traffic.
+  const pingRedis = singleFlight(async () => {
+    if (redisParts === undefined) return true;
     try {
-      // ping() resolves only with PONG and rejects on timeout or disconnect.
       await redisParts.redis.ping();
       return true;
     } catch {
       return false;
     }
+  });
+  const readiness = async (): Promise<Readiness> => {
+    if (!ready) return { ready: false, body: { status: 'not_ready' } };
+    if (redisParts === undefined || config.rateLimit.mode !== 'redis') {
+      return { ready: true, body: { status: 'ready' } };
+    }
+    if (await pingRedis()) return { ready: true, body: { status: 'ready', redis: 'up' } };
+    // Fail-closed can't serve without Redis; fail-open keeps serving with degraded local limits.
+    return config.rateLimit.redisFailurePolicy === 'closed'
+      ? { ready: false, body: { status: 'not_ready', redis: 'unavailable' } }
+      : { ready: true, body: { status: 'ready', redis: 'unavailable', rateLimit: 'degraded' } };
   };
-  const operations = buildOperationsServer(options, isReady);
+  const operations = buildOperationsServer(options, readiness);
   let closing: Promise<ShutdownResult> | undefined;
 
   async function shutdown(): Promise<ShutdownResult> {
@@ -530,7 +551,7 @@ export function createGateway(config: GatewayConfig, options: GatewayOptions = {
     public: publicServer,
     operations,
     async start() {
-      if (redisParts !== undefined) await waitForRedis(redisParts.redis, config, publicServer.log);
+      if (redisParts !== undefined) await waitForRedis(redisParts, config);
       await operations.listen({ host: config.operations.host, port: config.operations.port });
       await publicServer.listen({ host: config.server.host, port: config.server.port });
       ready = true;

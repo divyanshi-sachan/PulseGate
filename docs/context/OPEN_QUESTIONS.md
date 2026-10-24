@@ -6,15 +6,6 @@ with the ADR link. `[blocks: X]` marks the phase or component that can't be fina
 
 ## Open
 
-- **Q6 — Caching on authenticated routes.** `[blocks: Phase 5 cache]`
-  "Don't cache requests with authorization headers by default" — but auth-required routes always carry `X-API-Key`.
-  Does the API key count, and is the cache partitioned per client?
-  *Proposed:* API key does not by itself disable caching; cache key includes `clientId` by default
-  (`scope: "client"`), with an explicit opt-in `scope: "shared"` for public data. `Authorization` header still bypasses.
-
-- **Q13 — Request deduplication (P1) has no design.** *Proposed:* defer; singleflight on the cache key for
-  cache-eligible GETs only, designed in its own ADR before implementation.
-
 - **Q14 — Version reference mismatch.** system_design_specification.md says "Addendum to PRD v1.1"; prd.md is v1.0.
   *Proposed:* treat prd.md as current; fix the header when convenient.
 
@@ -35,3 +26,5 @@ with the ADR link. `[blocks: X]` marks the phase or component that can't be fina
 - **Q9 → [ADR-0032](../adr/0032-local-rate-limiting.md):** `X-RateLimit-Limit/Remaining/Reset` on rate-limited routes; `Retry-After` on 429.
 - **Q3 → [ADR-0033](../adr/0033-retries-and-breakers.md):** breaker states are `"closed" | "open" | "half-open"`.
 - **Q11 → [ADR-0033](../adr/0033-retries-and-breakers.md):** `halfOpenSuccessThreshold` (default 1, ≤ `halfOpenMaxRequests`).
+- **Q6 → [ADR-0035](../adr/0035-phase5-scope.md):** per-client cache keys on auth routes by default; `cache.scope: "shared"` opt-in; forwarded Authorization bypasses.
+- **Q13 → [ADR-0035](../adr/0035-phase5-scope.md):** request deduplication deferred until benchmarks justify it.

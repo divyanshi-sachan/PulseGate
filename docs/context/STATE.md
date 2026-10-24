@@ -27,15 +27,17 @@ _Last updated: 2026-10-23 (Phase 4 complete)_
 - Phase 3: `packages/reliability` (breaker State machine with permits, retry policy), executor in ProxyService
   (attempt timeouts, full-jitter retries for GET/HEAD/OPTIONS, 503 CIRCUIT_OPEN), normalized parser errors (ADR-0033). 223 tests; review added retained-response and socket tests (229).
 - Phase 4: Lua token bucket on Redis server time, `ResilientRateLimiter` (fail-closed 503 / fail-open degraded local),
-  Redis readiness ping, startup wait, `packages/testing`, `pnpm dev:distributed` (ADR-0034).
+  Redis readiness ping, `packages/testing`, `pnpm dev:distributed` (ADR-0034).
+- ADR-0034 review: startup fails without Redis, credential redaction, single-flight readiness with status body, TTL lower
+  bound; CI workflow + automated mutation suite (16 mutations) + distributed smoke script. 253 tests.
 
 ## Next up (Phase 5 — Caching and observability, technical_implementation.md §14)
-0. Review Claude-chosen details: ADR-0026, 0028, 0033 (Retry-After on CIRCUIT_OPEN, held responses, body-end settlement),
-   0034 (PEXPIRE margin, client options, startup wait, readiness ping).
-1. Decide Q6 (caching on authenticated routes: client-partitioned keys vs shared opt-in) and Q13 (request dedup, P1).
+0. Review Claude-chosen details: ADR-0026, 0028, 0033 (Retry-After on CIRCUIT_OPEN, held responses, body-end settlement).
+   CI has not run on GitHub yet: check the first run after pushing.
+1. Q6 and Q13 decided (ADR-0035): per-client cache keys + shared opt-in; dedup deferred.
 2. Bounded in-memory response cache (ADR-0009): eligibility, key composition, TTL, size limits, hit/miss/eviction counters.
 3. Prometheus `/metrics` on the operations listener (tech_impl §11 names, bounded labels); hook into the request log points.
-4. Basic React dashboard reading metrics (may slip to its own step).
+4. Then, as its own step: React dashboard on top of the metrics (ADR-0035).
 
 Exit criteria: dashboard data matches the gateway's observed behavior in integration tests.
 

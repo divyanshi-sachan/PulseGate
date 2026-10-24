@@ -1,5 +1,6 @@
 export {
   createGateway,
+  GatewayStartupError,
   newRequestId,
   type Gateway,
   type GatewayOptions,

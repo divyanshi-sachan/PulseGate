@@ -177,3 +177,13 @@ Format: date · goal · what changed · decisions (ADR links) · open threads.
 - **Spec restored (user request):** `technical_implementation.md` reset to its original content from 088f5e2. Commit 6a3d0c9
   had accidentally added 26 blank lines and a pasted `git add -A`, and an uncommitted edit had turned the closing principle into a
   blockquote. The diff against 088f5e2 is now empty.
+
+## 2026-10-23 · ADR-0034 review amendments + CI
+- **Decisions (user):** approved ADR-0034 with amendments: keep the TTL margin (lower bound tested), redact Redis credentials everywhere,
+  **fail startup** without Redis, single-flight readiness ping, `/health` independent; fail-open `/ready` = 200 with a degraded body
+  (user choice). Phase 5 scope decided in [ADR-0035](../adr/0035-phase5-scope.md) (Q6, Q13 resolved).
+- **Changed:** `apps/gateway/src/redis/{redis-url,single-flight}.ts` + tests; `GatewayStartupError`; readiness bodies; main exits 1 on
+  startup failure; harness `captureLogs(level)`; Redis tests updated (boot failure, wrong password, probe burst, degraded body);
+  `scripts/mutation-check.ts` (16 mutations, baseline-checked), `scripts/smoke-distributed.sh`, `.github/workflows/ci.yml`; CLAUDE.md rule.
+- **Found:** a malformed `REDIS_URL` would have leaked the password through Node's URL TypeError `input` property; fixed and tested.
+- **Verified:** 253 tests with Redis required; all 16 mutations killed (37 s); smoke 30/70 across two instances. CI not yet run on GitHub.

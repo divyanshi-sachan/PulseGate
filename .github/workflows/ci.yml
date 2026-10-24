@@ -1,0 +1,49 @@
+# CI (ADR-0034 review): full suite with real Redis (no skipping), curated mutation checks,
+# production image build and the two-instance shared-budget smoke test.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # Redis suites must run, never silently skip (Testcontainers uses the runner's Docker).
+      REQUIRE_REDIS_TESTS: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4 # version from package.json "packageManager"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26.4.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Format, lint, typecheck, tests (incl. Redis outage/recovery/concurrency)
+        run: pnpm check
+      - run: pnpm build
+      - name: Mutation checks (each re-introduced bug must fail the suite)
+        run: pnpm test:mutations
+
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and start the distributed stack (2 gateways + Redis + mocks)
+        run: docker compose -f docker-compose.yml -f docker-compose.distributed.yml up -d --build --wait
+      - name: Shared budget across instances
+        run: scripts/smoke-distributed.sh
+      - name: Logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.yml -f docker-compose.distributed.yml logs --no-color
+      - name: Tear down
+        if: always()
+        run: docker compose -f docker-compose.yml -f docker-compose.distributed.yml down
