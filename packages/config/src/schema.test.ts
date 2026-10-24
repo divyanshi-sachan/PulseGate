@@ -63,7 +63,7 @@ describe('defaults', () => {
     expect(config.rateLimit).toEqual({
       mode: 'local',
       maxBuckets: 100_000,
-      redis: { commandTimeoutMs: 50, connectTimeoutMs: 2000 },
+      redis: { commandTimeoutMs: 350, connectTimeoutMs: 2000 },
     });
     expect(config.routes[0]).toEqual({
       id: 'get-orders',
@@ -439,7 +439,7 @@ describe('rate-limit mode (ADR-0005)', () => {
       mode: 'redis',
       redisFailurePolicy: 'closed',
       maxBuckets: 100_000,
-      redis: { commandTimeoutMs: 50, connectTimeoutMs: 2000 },
+      redis: { commandTimeoutMs: 350, connectTimeoutMs: 2000 },
     });
   });
 

@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto';
 import { readFile, readdir, writeFile } from 'node:fs/promises';
 import { cpus, totalmem, type as osType, release, arch } from 'node:os';
 import { join } from 'node:path';
+import { loadConfigFile } from '../packages/config/src/index.ts';
 
 const [dir, profile = 'quick'] = process.argv.slice(2);
 if (dir === undefined) throw new Error('usage: node scripts/bench-meta.ts <run-dir> <profile>');
@@ -57,6 +58,10 @@ const cpuModel = firstNonEmpty(
   cpus()[0]?.model,
 );
 
+// The Redis limiter settings in force for K8, resolved from the pinned config (defaults included), so each report states
+// the timeout it measured rather than assuming one (ADR-0048).
+const redisConfig = (await loadConfigFile('config/routes.bench-redis.yaml')).rateLimit;
+
 const meta = {
   profile,
   /** Shared CI runners: numbers are not comparable and never committed (ADR-0046). */
@@ -94,5 +99,9 @@ const meta = {
       .filter((l) => l.trim() !== '').length,
   },
   workloadHashes: hashes,
+  redisLimiter: {
+    commandTimeoutMs: redisConfig.redis.commandTimeoutMs,
+    failurePolicy: redisConfig.mode === 'redis' ? redisConfig.redisFailurePolicy : null,
+  },
 };
 await writeFile(join(dir, 'meta.json'), JSON.stringify(meta, null, 2));

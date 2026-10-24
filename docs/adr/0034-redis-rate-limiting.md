@@ -7,7 +7,7 @@
 
 ## Decisions (user)
 1. **Connection:** the secret **`REDIS_URL`** comes only from env (`redis://` or `rediss://` for TLS) and is required when
-   `rateLimit.mode: "redis"`. Non-secret tuning goes in config: `rateLimit.redis.commandTimeoutMs` (default **50**) and
+   `rateLimit.mode: "redis"`. Non-secret tuning goes in config: `rateLimit.redis.commandTimeoutMs` (default **50**, raised to **350** by ADR-0048) and
    `connectTimeoutMs` (default **2000**). The URL is never logged; logs show `host:port` only.
 2. **Fail-open = local fallback:** when Redis can't answer, the request is checked against a **per-instance local token
    bucket** with the same policy, so the effective limit becomes N × capacity rather than none. Responses carry

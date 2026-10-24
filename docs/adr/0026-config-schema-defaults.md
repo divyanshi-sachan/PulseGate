@@ -24,7 +24,7 @@ including the request and response size-limit keys ADR-0018 deferred.
 | `rateLimit.mode` | `local` | `redis` **requires** `redisFailurePolicy: open \| closed` (no default, per ADR-0005) |
 | `responseCache.maxEntries` / `maxBytes` | `10000` / `67108864` (64 MiB) | Global cache bounds, LRU (ADR-0036) |
 | `rateLimit.maxBuckets` | `100000` | Local-mode bucket cap before LRU eviction, max 10,000,000 (ADR-0032); also bounds the fail-open fallback |
-| `rateLimit.redis.commandTimeoutMs` / `connectTimeoutMs` | `50` / `2000` | Redis tuning; the URL itself comes only from `REDIS_URL` (ADR-0034) |
+| `rateLimit.redis.commandTimeoutMs` / `connectTimeoutMs` | `350` (was `50`, raised by ADR-0048) / `2000` | Redis tuning; the URL itself comes only from `REDIS_URL` (ADR-0034) |
 | `circuitBreaker.*` | `5` / `10000` / `1` / `1` / `[500,502,503,504]` | failureThreshold / openDurationMs / halfOpenMaxRequests / halfOpenSuccessThreshold (ADR-0033) / failureStatuses; merged field by field into each upstream (ADR-0015) |
 
 ### Route defaults

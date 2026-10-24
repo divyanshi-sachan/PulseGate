@@ -8,7 +8,8 @@ The dashboard e2e passes locally against Docker; the new CI `e2e` job runs on th
 **testing on real data** per `docs/plans/real-data-testing.md` (approved): step 1, deterministic Docker faults F1–F6,
 is **done** (ADR-0044); step 2, real public API smoke tests R1–R9, is **done** (ADR-0045, opt-in `pnpm test:real`);
 step 3, the k6 suite, is **done** (ADR-0046, opt-in `pnpm bench`); step 4 is **done**: first full report committed (ADR-0047). It found intermittent fail-closed 503s from the 50 ms Redis
-command timeout during VM stalls (Q15), and Q13 needs a stampede scenario. Next: your decisions on Q15/Q13, then Phase 6 part B. License and release work deferred.
+command timeout during VM stalls (Q15), and Q13 needs a stampede scenario. Q15 is resolved: the default is now 350 ms (ADR-0048, measured on Mac and Linux CI). Open: Q13 (needs a stampede scenario).
+Next: Q13 when wanted, then Phase 6 part B. License and release work deferred.
 
 ## Done
 - Product, system-design and implementation specs written.

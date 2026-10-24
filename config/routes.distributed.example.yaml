@@ -6,7 +6,7 @@ rateLimit:
   mode: 'redis'
   redisFailurePolicy: 'closed' # reject with 503 RATE_LIMITER_UNAVAILABLE and report not ready while Redis is down
   redis:
-    commandTimeoutMs: 50 # default
+    commandTimeoutMs: 350 # default; a hung Redis is detected after this long (ADR-0048)
     connectTimeoutMs: 2000 # default
 
 upstreams:

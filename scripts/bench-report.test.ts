@@ -15,6 +15,7 @@ import {
   parsePrometheus,
   percentile,
   readRaw,
+  render,
   summarizeStats,
   type K6Summary,
   type RawRun,
@@ -269,6 +270,35 @@ describe('Q15 evidence per Redis window', () => {
     expect(result.limiterUnavailable).toBe(1);
     // The strict gate still fails on the 503: the evidence explains it, it doesn't excuse it.
     expect(result.gates.find((g) => g.name === 'statuses only 200')?.pass).toBe(false);
+
+    const meta = {
+      profile: 'full',
+      startedAt: '2026-10-24T00:00:00.000Z',
+      host: { cpuModel: 'Test CPU', logicalCpus: 4, memoryBytes: 1024 ** 3, os: 'test' },
+      docker: {
+        serverVersion: '29',
+        operatingSystem: 'test',
+        cpus: 4,
+        memoryBytes: 1024 ** 3,
+        composeVersion: '2',
+      },
+      limits: {},
+      versions: {},
+      git: { commit: 'abc', dirtyFiles: 0 },
+      workloadHashes: {},
+    };
+    const recorded = render(
+      { ...meta, redisLimiter: { commandTimeoutMs: 350, failurePolicy: 'closed' } },
+      'run',
+      [result],
+      {},
+    );
+    expect(recorded).toContain(
+      'Limiter in this run: `commandTimeoutMs` 350 ms, `redisFailurePolicy` closed.',
+    );
+    expect(recorded).toContain('| k8-tput-1-r2 | 50 | 94.1 | 23.8 | 1 |');
+    // Older runs: say it isn't recorded rather than assume a value.
+    expect(render(meta, 'run', [result], {})).toContain("not recorded in this run's metadata");
   });
 });
 

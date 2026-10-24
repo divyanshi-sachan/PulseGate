@@ -371,3 +371,12 @@ Format: date · goal · what changed · decisions (ADR links) · open threads.
   with K5 (14/14 gates).
 - **Next:** the user pushes; then `gh workflow run bench.yml` with `only=K8, k8_repeat=5, profile=full`, and the Q15
   decision per the rule.
+
+## 2026-10-24 · Q15 resolved: Redis command timeout default 350 ms
+- **Committed and pushed for the user:** `eea2b6e`. CI passed (check, docker, e2e; the k6 permission fix works on Linux).
+- **Ran:** `bench.yml` on GitHub (`only=K8, k8_repeat=5`, run 40100183226): 0 limiter 503s, stalls ≥ 50 ms in 7/10
+  windows (max 84.5 ms, loaded instance only). By the pre-agreed rule → raise to the smallest round value ≥ 2 × 163.7 ms
+  = 350 ms. Mac verification at 350 ms: 0 limiter 503s in 10 windows (stalls up to 154 ms); 44/44 gates.
+- **Changed:** default in the schema, tests, distributed example, ADR-0026/0034 notes; `bench-meta.ts` records the
+  effective limiter settings and reports state them (older runs say "not recorded" rather than assume); ADR-0048; Q15
+  moved to Resolved.

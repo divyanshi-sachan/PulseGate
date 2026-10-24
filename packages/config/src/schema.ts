@@ -147,7 +147,9 @@ const rateLimitSchema = z
     /** Redis tuning; the connection URL itself comes only from REDIS_URL (ADR-0034). */
     redis: z
       .strictObject({
-        commandTimeoutMs: z.int().min(1).max(10_000).default(50),
+        // 350 ms: at least 2 × the longest event-loop stall measured (164 ms), so a pause can't turn into a fail-closed
+        // 503 on its own (ADR-0048, Q15).
+        commandTimeoutMs: z.int().min(1).max(10_000).default(350),
         connectTimeoutMs: z.int().min(1).max(60_000).default(2000),
       })
       .prefault({}),

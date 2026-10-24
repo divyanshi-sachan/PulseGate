@@ -828,6 +828,8 @@ export interface Meta {
   versions: Record<string, string>;
   git: { commit: string; dirtyFiles: number };
   workloadHashes: Record<string, string>;
+  /** Recorded since ADR-0048; absent in earlier runs. */
+  redisLimiter?: { commandTimeoutMs: number; failurePolicy: string | null };
 }
 
 const OFFERED: Record<string, (name: string, profile: string) => string> = {
@@ -982,8 +984,12 @@ export function render(
     lines.push('');
     lines.push(
       'Per window: the longest event-loop stall of each gateway instance (`pulsegate_nodejs_eventloop_lag_max_seconds`, ' +
-        'reset at every scrape) and the `RATE_LIMITER_UNAVAILABLE` responses. The limiter command timeout is ' +
-        '`rateLimit.redis.commandTimeoutMs` (default 50 ms) with `redisFailurePolicy: closed`.',
+        'reset at every scrape) and the `RATE_LIMITER_UNAVAILABLE` responses. ' +
+        (meta.redisLimiter === undefined
+          ? "The limiter settings are not recorded in this run's metadata (recording started with ADR-0048, which " +
+            'lists the command timeout each earlier run used).'
+          : `Limiter in this run: \`commandTimeoutMs\` ${String(meta.redisLimiter.commandTimeoutMs)} ms, ` +
+            `\`redisFailurePolicy\` ${meta.redisLimiter.failurePolicy ?? 'n/a'}.`),
     );
     lines.push('');
     lines.push(
