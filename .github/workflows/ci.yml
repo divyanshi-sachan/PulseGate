@@ -29,6 +29,8 @@ jobs:
       - name: Format, lint, typecheck, tests (incl. Redis outage/recovery/concurrency)
         run: pnpm check
       - run: pnpm build
+      - name: Dashboard bundle budget and inline-code check (plan §3, ADR-0040)
+        run: pnpm bundle:check
       - name: Stats window memory bound (plan §2.2)
         run: pnpm bench:stats
       - name: Mutation checks (each re-introduced bug must fail the suite)

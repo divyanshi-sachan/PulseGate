@@ -1,0 +1,33 @@
+.pg-gate {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: var(--pg-space-5);
+}
+
+.pg-gate__card {
+  display: grid;
+  gap: var(--pg-space-4);
+  width: 100%;
+  max-width: 420px;
+  padding: var(--pg-space-6);
+}
+
+.pg-gate__brand img {
+  display: block;
+}
+
+.pg-gate__title {
+  font-size: var(--pg-text-2xl);
+  font-weight: var(--pg-weight-semibold);
+  line-height: var(--pg-leading-tight);
+}
+
+.pg-gate__lead {
+  color: var(--pg-text-muted);
+}
+
+.pg-gate__form {
+  display: grid;
+  gap: var(--pg-space-4);
+}

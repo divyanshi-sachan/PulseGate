@@ -1,8 +1,6 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
+import { MIN_ADMIN_TOKEN_LENGTH } from '@pulsegate/admin-contract';
 import { ConfigError } from '@pulsegate/config';
-
-/** Shortest accepted ADMIN_TOKEN (plan §5, Claude-chosen): 32 characters, e.g. `openssl rand -hex 16`. */
-export const MIN_ADMIN_TOKEN_LENGTH = 32;
 
 function digest(value: string): Buffer {
   return createHash('sha256').update(value, 'utf8').digest();

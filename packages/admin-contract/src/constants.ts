@@ -1,5 +1,11 @@
 import { GATEWAY_ERRORS } from '@pulsegate/shared';
 
+/**
+ * Shortest accepted ADMIN_TOKEN (plan §5, Claude-chosen): 32 characters, e.g. `openssl rand -hex 32`. Shared so the
+ * gateway refuses to start with a shorter one and the dashboard's token gate can explain the rule (ADR-0039, ADR-0041).
+ */
+export const MIN_ADMIN_TOKEN_LENGTH = 32;
+
 /** Rolling window shape (ADR-0037 amendment: 30 × 10 s). */
 export const WINDOW_SECONDS = 300;
 export const BUCKET_SECONDS = 10;

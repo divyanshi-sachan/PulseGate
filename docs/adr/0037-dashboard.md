@@ -46,7 +46,7 @@
 - **Testing:** component and contract tests **plus Playwright end to end now**, in CI against the Docker stack.
 
 ## Second review (2026-10-24, user): plan clarifications
-- **Percentile confidence per percentile:**
+- **Percentile confidence per percentile** *(the thresholds and labels below are superseded by ADR-0038's second review: exact order-statistic thresholds 383 / 484 / 1,707 and the labels none / low / approximate / adequate)*:
   - Each percentile carries `method` (`exact` | `sampled`), observations, samples, `tailSamples` and `confidence`.
   - `low` when fewer than 5 samples lie beyond the estimate: n ≥ 10 for p50, ≥ 100 for p95, ≥ 500 for p99. For the
     window, n is the effective sample size of the weighted merge.

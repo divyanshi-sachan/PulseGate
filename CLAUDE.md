@@ -96,6 +96,9 @@ metrics, served at `/metrics` on the operations listener; ADR-0036),
 breaker permits and retries; ADR-0028, 0031, 0033). New workspace packages must also be added to the Dockerfile's manifest COPY list.
 Clients file (`PULSEGATE_CLIENTS`, example `config/clients.example.yaml`) holds SHA-256 key digests only.
 Unit tests sit next to code in `src/`; socket-level integration tests with mock upstreams in `apps/gateway/test/`.
+`apps/dashboard` (React 19 + Vite 8, browser code: own tsconfig, jsdom Vitest project, react-hooks lint; validates
+every API response with `@pulsegate/admin-contract`; tokens in `src/design/tokens.css`; strict CSP, so no inline
+scripts or styles; ADR-0041).
 `examples/mock-upstreams` (dev/demo upstream with `_delay`/`_status`/`_reset`/`_bytes`/`_failRate` query faults).
 Docker: one multi-stage `Dockerfile` (targets `gateway`, `mock-upstreams`); Compose mounts `config/routes.example.yaml`.
 When changing config: update schema, ADR-0026, the example YAML and the defaults test together.
@@ -134,6 +137,8 @@ pnpm dev:distributed  # + Redis and a second gateway on :8081 sharing one budget
 REQUIRE_REDIS_TESTS=1 pnpm test   # fail instead of skipping when Docker/Redis is unavailable (CI does this)
 pnpm test:mutations   # curated mutation suite: each re-introduced bug must fail the tests (also in CI)
 pnpm bench:stats      # stats-window heap vs formula, one child process per config (also in CI)
+pnpm --filter @pulsegate/dashboard dev   # dashboard on Vite, proxying /admin/api to a gateway on :9090
+pnpm bundle:check     # after pnpm build: dashboard JS budget (initial ≤ 120 KB, total ≤ 260 KB gz) + no inline code (also in CI)
 scripts/smoke-distributed.sh      # with dev:distributed running: exactly 30/100 pass across 2 instances
 ```
 

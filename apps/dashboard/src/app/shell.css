@@ -1,0 +1,43 @@
+.pg-shell {
+  min-height: 100vh;
+}
+
+.pg-shell__header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--pg-surface-card);
+  border-bottom: 1px solid var(--pg-border);
+}
+
+.pg-shell__bar {
+  display: flex;
+  align-items: center;
+  gap: var(--pg-space-4);
+  max-width: var(--pg-content-max);
+  margin: 0 auto;
+  padding: var(--pg-space-3) var(--pg-space-5);
+}
+
+.pg-shell__brand {
+  display: flex;
+  align-items: center;
+  gap: var(--pg-space-2);
+  font-weight: var(--pg-weight-semibold);
+  font-size: var(--pg-text-lg);
+}
+
+.pg-shell__instance {
+  color: var(--pg-text-muted);
+  font-size: var(--pg-text-sm);
+}
+
+.pg-shell__spacer {
+  flex: 1;
+}
+
+.pg-shell__main {
+  max-width: var(--pg-content-max);
+  margin: 0 auto;
+  padding: var(--pg-space-5);
+}

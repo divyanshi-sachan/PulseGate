@@ -1,0 +1,173 @@
+/* Base styles and primitives. Values come only from tokens.css. */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--pg-surface-page);
+  color: var(--pg-text);
+  font-family: var(--pg-font-sans);
+  font-size: var(--pg-text-md);
+  line-height: var(--pg-leading-normal);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+
+:focus-visible {
+  outline: none;
+  box-shadow: var(--pg-focus-ring);
+}
+
+.pg-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.pg-mono {
+  font-family: var(--pg-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Buttons ---- */
+.pg-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--pg-space-2);
+  min-height: 36px;
+  padding: 0 var(--pg-space-4);
+  border: 1px solid transparent;
+  border-radius: var(--pg-radius-md);
+  font: inherit;
+  font-weight: var(--pg-weight-medium);
+  cursor: pointer;
+  transition: background-color var(--pg-duration-fast) ease;
+}
+
+.pg-button--primary {
+  background: var(--pg-accent);
+  color: var(--pg-text-inverse);
+}
+
+.pg-button--primary:hover:not(:disabled) {
+  background: var(--pg-accent-hover);
+}
+
+.pg-button--secondary {
+  background: var(--pg-surface-card);
+  border-color: var(--pg-border-strong);
+  color: var(--pg-text);
+}
+
+.pg-button--secondary:hover:not(:disabled) {
+  background: var(--pg-gray-50);
+}
+
+.pg-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* ---- Form fields ---- */
+.pg-field {
+  display: grid;
+  gap: var(--pg-space-2);
+}
+
+.pg-label {
+  font-weight: var(--pg-weight-medium);
+}
+
+.pg-hint {
+  color: var(--pg-text-muted);
+  font-size: var(--pg-text-sm);
+}
+
+.pg-input {
+  width: 100%;
+  min-height: 38px;
+  padding: 0 var(--pg-space-3);
+  border: 1px solid var(--pg-border-strong);
+  border-radius: var(--pg-radius-md);
+  background: var(--pg-surface-card);
+  color: var(--pg-text);
+  font: inherit;
+}
+
+.pg-input[aria-invalid='true'] {
+  border-color: var(--pg-danger);
+}
+
+/* ---- Surfaces ---- */
+.pg-card {
+  background: var(--pg-surface-card);
+  border: 1px solid var(--pg-border);
+  border-radius: var(--pg-radius-lg);
+  box-shadow: var(--pg-shadow-card);
+}
+
+/* ---- Banners ---- */
+.pg-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--pg-space-3);
+  padding: var(--pg-space-3) var(--pg-space-4);
+  border: 1px solid;
+  border-radius: var(--pg-radius-md);
+  font-size: var(--pg-text-sm);
+}
+
+.pg-banner--danger {
+  background: var(--pg-danger-surface);
+  border-color: var(--pg-danger);
+  color: var(--pg-danger);
+}
+
+.pg-banner--warning {
+  background: var(--pg-warning-surface);
+  border-color: var(--pg-warning);
+  color: var(--pg-warning);
+}
+
+.pg-banner--info {
+  background: var(--pg-info-surface);
+  border-color: var(--pg-info);
+  color: var(--pg-info);
+}
+
+/* ---- Skeleton ---- */
+.pg-skeleton {
+  display: block;
+  min-height: 1em;
+  border-radius: var(--pg-radius-sm);
+  background: var(--pg-gray-100);
+}
+
+.pg-skeleton--label {
+  width: 40%;
+}
+
+.pg-skeleton--value {
+  width: 70%;
+  min-height: 2rem;
+}

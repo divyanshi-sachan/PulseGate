@@ -463,6 +463,57 @@ const MUTATIONS: Mutation[] = [
     tests: ['apps/gateway/test/admin-ui.test.ts'],
   },
   {
+    id: 'dashboard-token-in-localstorage',
+    guards: 'ADR-0037: the admin token lives in sessionStorage only',
+    file: 'apps/dashboard/src/auth/token-store.ts',
+    find: 'export function createTokenStore(storage: () => Storage = () => window.sessionStorage): TokenStore {',
+    replace:
+      'export function createTokenStore(storage: () => Storage = () => window.localStorage): TokenStore {',
+    tests: ['apps/dashboard'],
+  },
+  {
+    id: 'dashboard-client-skips-validation',
+    guards: 'plan §6: every admin API response is validated with the shared contract',
+    file: 'apps/dashboard/src/api/client.ts',
+    find: '    const parsed = schema.safeParse(body);',
+    replace:
+      '    const parsed = { success: true as const, data: body as T, error: undefined as never };',
+    tests: ['apps/dashboard'],
+  },
+  {
+    id: 'dashboard-gate-accepts-unverified',
+    guards: 'ADR-0037: the token gate verifies a token against the API before keeping it',
+    file: 'apps/dashboard/src/app/TokenGate.tsx',
+    find: '      await connect(candidate).stats();',
+    replace: '      connect(candidate);',
+    tests: ['apps/dashboard'],
+  },
+  {
+    id: 'dashboard-401-shown-as-error',
+    guards: 'plan §4: a rejected token returns to the gate instead of showing an error',
+    file: 'apps/dashboard/src/api/use-resource.ts',
+    find: "        if (error instanceof ApiError && error.kind === 'unauthorized') {",
+    replace: "        if (error instanceof ApiError && error.kind === 'never') {",
+    tests: ['apps/dashboard'],
+  },
+  {
+    id: 'bundle-dynamic-imports-initial',
+    guards: 'plan §3: lazy chunks count toward the total budget, not the initial one',
+    file: 'scripts/check-bundle.ts',
+    find: '    for (const imported of chunk.imports ?? []) visit(imported);',
+    replace:
+      '    for (const imported of [...(chunk.imports ?? []), ...(chunk.dynamicImports ?? [])]) visit(imported);',
+    tests: ['scripts/check-bundle.test.ts'],
+  },
+  {
+    id: 'bundle-inline-script-allowed',
+    guards: 'ADR-0040: the build check rejects inline scripts the CSP would block',
+    file: 'scripts/check-bundle.ts',
+    find: "    if (!/\\bsrc\\s*=/.test(attributes) || (match[2] ?? '').trim() !== '') {",
+    replace: "    if (attributes === 'never') {",
+    tests: ['scripts/check-bundle.test.ts'],
+  },
+  {
     id: 'ready-despite-redis-down',
     guards: 'ADR-0034: fail-closed readiness reflects Redis',
     file: 'apps/gateway/src/app.ts',

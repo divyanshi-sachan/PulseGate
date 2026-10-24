@@ -274,3 +274,12 @@ Format: date · goal · what changed · decisions (ADR links) · open threads.
   ADR-0040.
 - **Note:** the CSP forbids inline styles; step 5 must confirm Recharts works under it (Playwright).
 - **Next:** step 4, `apps/dashboard` scaffold.
+
+## 2026-10-24 · Dashboard step 4: scaffold, client, token gate, budget
+- **Changed:** `apps/dashboard` (Vite 8.3.5, React 19.3.1) wired into typecheck, lint (react-hooks) and Vitest projects;
+  design tokens with tested WCAG AA contrast; contract-validating API client with typed errors; sessionStorage token
+  store; token gate that verifies before keeping; shell with lazy Overview KPIs; `scripts/check-bundle.ts` (+ CI step);
+  `MIN_ADMIN_TOKEN_LENGTH` moved into the contract; 55 new tests; 6 mutations (59 total); ADR-0041.
+- **Measured:** initial 93.6 KB gz / 120, total 94.8 KB / 260; Zod + contract ≈ 27 KB of the initial load. The built UI
+  ran under the gateway's strict CSP in a real browser with no console errors.
+- **Next:** step 5, charts (Recharts, lazy) + chart-data + screens + polling/staleness; re-measure the bundle.

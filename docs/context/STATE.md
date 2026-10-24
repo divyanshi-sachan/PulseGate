@@ -40,7 +40,7 @@ the React dashboard (ADR-0035), then **Phase 6 — release and benchmarks**.
 1. ~~Contracts + `StatsWindow` + benchmark~~ **done** (ADR-0038).
 2. ~~Admin listener (ADR-0020), auth, `/admin/api/*` endpoints + socket tests~~ **done** (ADR-0039).
 3. ~~Static UI serving + security headers~~ **done** (ADR-0040).
-4. `apps/dashboard` scaffold (Vite 8 / React 19 / Recharts 3.10.1 lazy), tokens, API client, token gate, bundle budget.
+4. ~~`apps/dashboard` scaffold, tokens, API client, token gate, bundle budget~~ **done** (ADR-0041; Recharts comes with step 5).
 5. Charts + `chart-data` + screens + component/contract tests; re-measure the bundle.
 6. Compose dashboard override + Playwright e2e + CI + Docker verification + docs.
 
