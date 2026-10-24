@@ -11,8 +11,7 @@
   for integer weights.
 - **Effective sample size:** Kish, (Σw)² / Σw². When every bucket is exact (all weights 1) it equals the sample count.
 - **Window `method`:** `exact` only if every bucket in it is exact; otherwise `sampled`.
-- **Buckets are aligned to wall-clock time** (`Date.now`), so chart timestamps are real.
-  - A wall-clock jump can shift buckets; that is acceptable for a 5-minute operational view.
+- **Buckets follow a monotonic clock anchored to the wall clock at startup** *(changed by the review below; first version used `Date.now`)*.
   - The bucket list comes from the clock: quiet intervals are explicit empty buckets, and intervals before startup
     are omitted.
   - A bucket's `durationMs` is the real covered time (the first bucket after startup is shorter), and `partial` marks
@@ -47,6 +46,39 @@
   The ~130 KB above the formula is fixed object overhead. The first version measured all configurations in one process
   and **undercounted by ~20 %**, because ArrayBuffer memory from the previous window was released lazily after GC. Each
   configuration now runs in its own child process.
+
+## Review (2026-10-24, user): four checks and what changed
+1. **Weighted percentile correctness:**
+   - Weights are float64: bucket observations ÷ retained samples, e.g. 600/512 = 1.171875.
+   - The boundary rule is nearest rank: the **lower** value wins when the cumulative weight lands exactly on q·total.
+     A relative 1e-12 epsilon absorbs summation rounding only (0.1 + 0.2 must not move the 0.3 boundary).
+   - New tests: 200 random trials with fractional weights (multiples of 1/8, many ties) against exact integer
+     expansion, exact boundaries, ties at the boundary, and order independence.
+2. **Confidence thresholds: replaced, not just tested.** The plan's rule (≥ 5 samples beyond the estimate) was a
+   heuristic, and a simulation shows it fails for p99: at n = 500, fewer than 90 % of p99 estimates land within ±0.5 points.
+   - **New rule:** "ok" when, with 95 % probability, the reported value lies between the true (q − δ)- and
+     (q + δ)-quantiles. δ is **±5 pts for p50, ±2 pts for p95, ±0.5 pts for p99** *(Claude-chosen tolerances; review)*.
+   - That requires n ≥ z²·q(1 − q)/δ² samples (effective samples for the window): **385, 457, 1,522**. It is
+     distribution-free, because it is a statement about ranks.
+   - **Monte Carlo test:** coverage ≥ 93 % at the threshold (600 trials each) and < 90 % at a sixth of it.
+   - **Consequence:** a single 10 s bucket (≤ 512 samples) can never reach "ok" for p99, so per-bucket p99 is always
+     marked low confidence. The window p99 becomes "ok" from ~1,522 requests per 5 minutes.
+   - Exact buckets use the same rule: exact describes those requests, but confidence is about the latency the dashboard
+     is trying to show.
+3. **Counter overflow:**
+   - Per-bucket `Uint32` counters reset every 10 s, so wrapping would need ~429 M events per second. They now
+     **saturate** at 2³² − 1 anyway (tested), so an impossible overflow can never read as a tiny count.
+   - Window sums use float64 (exact to 2⁵³), and lifetime totals live in Prometheus counters.
+4. **Wall-clock changes:**
+   - Buckets now follow `performance.now()`, anchored to `Date.now()` once at startup, so NTP steps or manual clock
+     changes can't move, reuse or reorder buckets. Bucket timestamps may then drift from the wall clock by however
+     far it was stepped, which is acceptable for a 5-minute view and recorded here.
+   - Window time is clamped to never run backwards, even if the monotonic source misbehaves, so a slot only ever moves
+     forward and stale counts can't be reused.
+   - Tests: a wall clock stepped −1 h and then +1 d; a monotonic source going back 60 s; a 1-hour suspension (fresh
+     zero buckets); rates finite or null at zero elapsed time, never Infinity.
+- **Mutations:** 3 new ones, all caught (the old tail rule, time running backwards, wrapping counters). The ESS
+  mutation was re-pointed after the refactor; the suite reported its stale pattern instead of passing silently.
 
 ## Consequences
 - Step 2 wires the window into the gateway hooks (only when `ADMIN_TOKEN` is set) and assembles the five endpoints from

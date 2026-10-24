@@ -3,6 +3,7 @@ import {
   BUCKET_SECONDS,
   COUNTED_CODES,
   PERCENTILES,
+  REQUIRED_SAMPLES,
   RESERVOIR_SIZE,
   WINDOW_SECONDS,
   type Envelope,
@@ -23,6 +24,7 @@ import {
 } from './stats-math.ts';
 
 const BUCKET_MS = BUCKET_SECONDS * 1000;
+const UINT32_MAX = 0xffffffff;
 const WINDOW_MS = WINDOW_SECONDS * 1000;
 
 /** Route counter layout: 36 slots per bucket (plan §2.3). */
@@ -90,12 +92,14 @@ class Series {
   add(bucketStart: number, counter: number, amount = 1): void {
     const index = this.slot(bucketStart);
     const at = index * this.width + counter;
-    this.counters[at] = (this.counters[at] ?? 0) + amount;
+    // Saturates instead of wrapping. A bucket resets every 10 s, so reaching 2³² − 1 would take ~429 M
+    // events per second; saturating keeps an impossible overflow from ever reading as a tiny count.
+    this.counters[at] = Math.min(UINT32_MAX, (this.counters[at] ?? 0) + amount);
   }
 
   addLatency(bucketStart: number, ms: number, random: () => number): void {
     const index = this.slot(bucketStart);
-    const seen = (this.observations[index] ?? 0) + 1;
+    const seen = Math.min(UINT32_MAX, (this.observations[index] ?? 0) + 1);
     this.observations[index] = seen;
     const held = this.sampleCount[index] ?? 0;
     const base = index * RESERVOIR_SIZE;
@@ -141,8 +145,13 @@ class Series {
 export interface StatsWindowOptions {
   routes: readonly string[];
   upstreams: readonly string[];
-  /** Wall-clock milliseconds; buckets align to it so charts get real timestamps (default Date.now). */
-  now?: () => number;
+  /** Wall clock, read once at startup to anchor bucket timestamps (default Date.now). */
+  wallClock?: () => number;
+  /**
+   * Monotonic milliseconds driving the buckets (default performance.now). Wall-clock jumps therefore
+   * can't move, reuse or reorder buckets (ADR-0038 review).
+   */
+  monotonic?: () => number;
   /** Reservoir randomness (default Math.random); deterministic in tests. */
   random?: () => number;
   instanceId?: string;
@@ -169,7 +178,10 @@ export function statsWindowBound(routes: number, upstreams: number): number {
  * total and upstream, with measured percentiles and the rate formulas of plan §2.3.
  */
 export class StatsWindow {
-  readonly #now: () => number;
+  readonly #monotonic: () => number;
+  readonly #anchorWall: number;
+  readonly #anchorMonotonic: number;
+  #last = 0;
   readonly #random: () => number;
   readonly #startedAt: number;
   readonly #instanceId: string;
@@ -179,13 +191,26 @@ export class StatsWindow {
   readonly #total = new Series(ROUTE_COUNTERS.length);
 
   constructor(options: StatsWindowOptions) {
-    this.#now = options.now ?? Date.now;
+    this.#monotonic = options.monotonic ?? (() => performance.now());
+    this.#anchorWall = (options.wallClock ?? Date.now)();
+    this.#anchorMonotonic = this.#monotonic();
     this.#random = options.random ?? Math.random;
-    this.#startedAt = this.#now();
+    this.#startedAt = this.#anchorWall;
+    this.#last = this.#anchorWall;
     this.#instanceId = options.instanceId ?? `gw_${this.#startedAt.toString(36)}`;
     for (const id of options.routes) this.#routes.set(id, new Series(ROUTE_COUNTERS.length));
     for (const id of options.upstreams)
       this.#upstreams.set(id, new Series(UPSTREAM_COUNTERS.length));
+  }
+
+  /**
+   * Window time: the startup wall-clock anchor plus monotonic elapsed time, and never earlier than the
+   * last value returned, so time can't run backwards even if the injected monotonic source does.
+   */
+  #now(): number {
+    const t = this.#anchorWall + (this.#monotonic() - this.#anchorMonotonic);
+    this.#last = Math.max(this.#last, t);
+    return this.#last;
   }
 
   get startedAt(): number {
@@ -482,9 +507,19 @@ function bucketLatency(series: Series, index: number | undefined): Latency {
   const observations = index === undefined ? 0 : (series.observations[index] ?? 0);
   const sorted = Array.from(series.bucketSamples(index)).sort((a, b) => a - b);
   const exact = sorted.length === observations;
-  const make = (q: number) =>
-    percentile({ value: nearestRank(sorted, q), observations, samples: sorted.length, exact, q });
-  return { p50: make(PERCENTILES.p50), p95: make(PERCENTILES.p95), p99: make(PERCENTILES.p99) };
+  const make = (name: keyof typeof PERCENTILES) => {
+    const q = PERCENTILES[name];
+    const value = nearestRank(sorted, q);
+    return percentile({
+      value,
+      observations,
+      samples: sorted.length,
+      exact,
+      q,
+      requiredSamples: REQUIRED_SAMPLES[name],
+    });
+  };
+  return { p50: make('p50'), p95: make('p95'), p99: make('p99') };
 }
 
 /**
@@ -506,7 +541,17 @@ function windowLatency(series: Series, indexes: (number | undefined)[]): Latency
     for (const value of series.bucketSamples(index)) weighted.push({ value, weight });
   }
   const ess = effectiveSampleSize(weighted.map((s) => s.weight));
-  const make = (q: number) =>
-    percentile({ value: weightedQuantile(weighted, q), observations, samples: ess, exact, q });
-  return { p50: make(PERCENTILES.p50), p95: make(PERCENTILES.p95), p99: make(PERCENTILES.p99) };
+  const make = (name: keyof typeof PERCENTILES) => {
+    const q = PERCENTILES[name];
+    const value = weightedQuantile(weighted, q);
+    return percentile({
+      value,
+      observations,
+      samples: ess,
+      exact,
+      q,
+      requiredSamples: REQUIRED_SAMPLES[name],
+    });
+  };
+  return { p50: make('p50'), p95: make('p95'), p99: make('p99') };
 }

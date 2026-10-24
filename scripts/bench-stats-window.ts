@@ -48,7 +48,13 @@ function runOne(routeCount: number, upstreamCount: number): Result {
   };
 
   const before = measured();
-  const window = new StatsWindow({ routes, upstreams, now: () => now, random });
+  const window = new StatsWindow({
+    routes,
+    upstreams,
+    wallClock: () => 1_800_000_000_000,
+    monotonic: () => now,
+    random,
+  });
   // Fill every bucket of every series past the reservoir size (600 observations per bucket).
   for (let bucket = 0; bucket < 30; bucket++) {
     for (const routeId of routes) {

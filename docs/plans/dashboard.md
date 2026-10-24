@@ -39,7 +39,8 @@ socket-level API tests **and** a Playwright test against the Docker stack.
 internally to roll. Expose those buckets in the API instead of only their sum. No new state, no extra service.
 
 ## 2. Rolling window: `packages/observability`
-- **Buckets:** **30 × 10 s** (5 minutes), ring-indexed by `floor(now / 10 s) mod 30`, with an injected clock.
+- **Buckets:** **30 × 10 s** (5 minutes), ring-indexed by `floor(t / 10 s) mod 30`. *t* is a monotonic clock anchored to the
+  wall clock at startup and clamped to never run backwards (ADR-0038 review).
 - **Series:** one per configured route, one for `unmatched`, one **total**, and one per configured upstream. The set of
   series is fixed at startup; unknown ids map to `unmatched`/`unknown`.
 - **Allocated only when the admin listener is enabled** (`ADMIN_TOKEN` set). Otherwise it costs nothing.
@@ -57,17 +58,16 @@ For percentile *q* ∈ {0.50, 0.95, 0.99}, the API returns
   - the retained sample count for a bucket;
   - for the window, the **effective sample size** of the weighted merge, Kish's (Σw)² / Σw², because a heavily weighted
     busy bucket carries fewer independent samples than its raw count suggests.
-- **`confidence`:**
+- **`confidence`** *(revised by the ADR-0038 review; the first rule was "≥ 5 samples beyond the estimate")*:
   - `"none"`: no observations; `value: null`, drawn as a gap.
-  - `"low"`: `tailSamples` < 5. That needs **n ≥ 10 for p50, n ≥ 100 for p95, n ≥ 500 for p99.** The value is still shown,
-    but visibly marked (dashed segment or hollow point, and a tooltip such as "low confidence: 3 samples above p99,
-    needs 5").
-  - `"ok"` otherwise.
+  - `"ok"`: with 95 % probability, the value lies between the true (q − δ)- and (q + δ)-quantiles, with δ = ±5 / ±2 /
+    ±0.5 points for p50 / p95 / p99. That needs **n ≥ 385 / 457 / 1,522** (effective samples for the window). The rule
+    is distribution-free and was verified by Monte Carlo simulation.
+  - `"low"` otherwise: the value is still shown, visibly marked, with a tooltip giving n and the requirement.
 - **Consequences:**
-  - A per-bucket p99 is "ok" only once a 10-second bucket holds ≥ 500 samples (≈ 50 req/s); at demo traffic it will
-    usually be marked low.
-  - The window p99 becomes "ok" much sooner, because it merges up to 15,360 samples.
-  - The UI never hides this: the KPI tile shows `n` and the confidence.
+  - A per-bucket p99 is never "ok" (≤ 512 samples per bucket), so charts draw it as low confidence.
+  - Per-bucket p50 and p95 become "ok" at ≈ 39 and 46 req/s; the window p99 from ≈ 1,522 requests per 5 minutes.
+  - The UI never hides this.
 - **Window quantile:** a weighted quantile over all live reservoirs, each sample weighted by
   bucket observations ÷ bucket samples, never derived from `/metrics` histograms.
 - **Tests:**

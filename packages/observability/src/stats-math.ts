@@ -1,5 +1,4 @@
 import {
-  CONFIDENCE_TAIL_MIN,
   type Percentile,
   type RouteCounters,
   type RouteRates,
@@ -36,7 +35,8 @@ export function weightedQuantile(
   let cumulative = 0;
   for (const sample of sorted) {
     cumulative += sample.weight;
-    // Small epsilon so floating-point sums can't skip the exact boundary.
+    // Weights are float64 (bucket observations ÷ retained samples, e.g. 600/512 = 1.171875). The relative
+    // epsilon only absorbs summation rounding at an exact boundary, where nearest rank takes the lower value.
     if (cumulative >= target - total * 1e-12) return sample.value;
   }
   return sorted.at(-1)?.value;
@@ -53,7 +53,10 @@ export function effectiveSampleSize(weights: readonly number[]): number {
   return squares === 0 ? 0 : (sum * sum) / squares;
 }
 
-/** Builds a Percentile per plan §2.1: confidence is "low" with fewer than 5 samples beyond the estimate. */
+/**
+ * Builds a Percentile (plan §2.1, ADR-0038 review). Confidence is "ok" only when the (effective) sample
+ * count meets the accuracy target for this percentile (REQUIRED_SAMPLES), otherwise "low".
+ */
 export function percentile(input: {
   value: number | undefined;
   observations: number;
@@ -61,6 +64,8 @@ export function percentile(input: {
   samples: number;
   exact: boolean;
   q: number;
+  /** Samples needed for "ok" at this percentile (REQUIRED_SAMPLES[name]). */
+  requiredSamples: number;
 }): Percentile {
   const samples = Math.floor(input.samples);
   if (input.observations === 0 || input.value === undefined) {
@@ -80,7 +85,7 @@ export function percentile(input: {
     observations: input.observations,
     samples,
     tailSamples,
-    confidence: tailSamples >= CONFIDENCE_TAIL_MIN ? 'ok' : 'low',
+    confidence: input.samples >= input.requiredSamples ? 'ok' : 'low',
   };
 }
 

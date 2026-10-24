@@ -1,3 +1,4 @@
+import { PERCENTILES, RANK_TOLERANCE, REQUIRED_SAMPLES } from '@pulsegate/admin-contract';
 import { describe, expect, it } from 'vitest';
 import {
   effectiveSampleSize,
@@ -65,22 +66,106 @@ describe('quantiles (plan §2.1)', () => {
   });
 });
 
-describe('percentile confidence (plan §2.1)', () => {
-  const cases: [number, number][] = [
-    [0.5, 10],
-    [0.95, 100],
-    [0.99, 500],
-  ];
-  it.each(cases)('q=%s needs %s samples for "ok"', (q, n) => {
+describe('weighted quantile edge cases (ADR-0038 review)', () => {
+  it('matches exact expansion for fractional weights (multiples of 1/8)', () => {
+    const random = rng(7);
+    for (let trial = 0; trial < 200; trial++) {
+      const samples = Array.from({ length: 1 + Math.floor(random() * 30) }, () => ({
+        value: Math.floor(random() * 50), // many ties
+        weight: (1 + Math.floor(random() * 24)) / 8,
+      }));
+      const expanded = samples
+        .flatMap((s) => Array.from({ length: Math.round(s.weight * 8) }, () => s.value))
+        .sort((a, b) => a - b);
+      for (const q of [0.5, 0.95, 0.99])
+        expect(weightedQuantile(samples, q)).toBe(nearestRank(expanded, q));
+    }
+  });
+
+  it('takes the lower value when the cumulative weight lands exactly on the target', () => {
+    expect(
+      weightedQuantile(
+        [
+          { value: 1, weight: 1 },
+          { value: 2, weight: 1 },
+        ],
+        0.5,
+      ),
+    ).toBe(1);
+    // 0.1 + 0.2 = 0.30000000000000004: the epsilon must not move the boundary to the next value.
+    const tenths = Array.from({ length: 10 }, (_, i) => ({ value: i + 1, weight: 0.1 }));
+    expect(weightedQuantile(tenths, 0.3)).toBe(3);
+    expect(weightedQuantile(tenths, 0.31)).toBe(4);
+  });
+
+  it('handles ties at the quantile boundary', () => {
+    const samples = [5, 5, 5, 5, 9].map((value) => ({ value, weight: 1.171875 }));
+    expect(weightedQuantile(samples, 0.8)).toBe(5);
+    expect(weightedQuantile(samples, 0.81)).toBe(9);
+  });
+
+  it('is unaffected by input order', () => {
+    const samples = [3, 1, 2].map((value, i) => ({ value, weight: i + 0.5 }));
+    expect(weightedQuantile(samples, 0.5)).toBe(weightedQuantile([...samples].reverse(), 0.5));
+  });
+});
+
+describe('percentile confidence (ADR-0038 review: accuracy target)', () => {
+  it('derives the required samples from the rank tolerance', () => {
+    expect(REQUIRED_SAMPLES).toEqual({ p50: 385, p95: 457, p99: 1522 });
+  });
+
+  it.each(Object.entries(REQUIRED_SAMPLES))('%s is ok only from %s samples', (name, n) => {
+    const q = PERCENTILES[name as keyof typeof PERCENTILES];
     const at = (samples: number) =>
-      percentile({ value: 1, observations: samples, samples, exact: true, q }).confidence;
+      percentile({ value: 1, observations: samples, samples, exact: true, q, requiredSamples: n })
+        .confidence;
     expect(at(n - 1)).toBe('low');
     expect(at(n)).toBe('ok');
   });
 
+  it('meets the accuracy target at the threshold, and misses it well below (Monte Carlo)', () => {
+    // Rank statements are distribution-free, so uniform(0, 1) samples suffice: an estimate x of the
+    // q-quantile is "accurate" when q − δ ≤ x ≤ q + δ.
+    const random = rng(2024);
+    const coverage = (name: keyof typeof PERCENTILES, n: number, trials: number) => {
+      const q = PERCENTILES[name];
+      const delta = RANK_TOLERANCE[name];
+      let hits = 0;
+      for (let t = 0; t < trials; t++) {
+        const values = Array.from({ length: n }, () => random()).sort((a, b) => a - b);
+        const estimate = nearestRank(values, q) ?? -1;
+        if (estimate >= q - delta && estimate <= q + delta) hits++;
+      }
+      return hits / trials;
+    };
+    for (const name of ['p50', 'p95', 'p99'] as const) {
+      expect({ name, ok: coverage(name, REQUIRED_SAMPLES[name], 600) >= 0.93 }).toEqual({
+        name,
+        ok: true,
+      });
+      expect({
+        name,
+        low: coverage(name, Math.floor(REQUIRED_SAMPLES[name] / 6), 600) < 0.9,
+      }).toEqual({
+        name,
+        low: true,
+      });
+    }
+    // The old rule ("5 samples beyond the estimate", n = 500 for p99) misses the p99 target.
+    expect(coverage('p99', 500, 600)).toBeLessThan(0.9);
+  });
+
   it('reports none (null value) without observations and carries counts and method', () => {
     expect(
-      percentile({ value: undefined, observations: 0, samples: 0, exact: true, q: 0.99 }),
+      percentile({
+        value: undefined,
+        observations: 0,
+        samples: 0,
+        exact: true,
+        q: 0.99,
+        requiredSamples: 1522,
+      }),
     ).toEqual({
       value: null,
       method: 'exact',
@@ -90,14 +175,21 @@ describe('percentile confidence (plan §2.1)', () => {
       confidence: 'none',
     });
     expect(
-      percentile({ value: 12, observations: 5000, samples: 512, exact: false, q: 0.99 }),
+      percentile({
+        value: 12,
+        observations: 5000,
+        samples: 512,
+        exact: false,
+        q: 0.99,
+        requiredSamples: 1522,
+      }),
     ).toEqual({
       value: 12,
       method: 'sampled',
       observations: 5000,
       samples: 512,
       tailSamples: 5,
-      confidence: 'ok',
+      confidence: 'low',
     });
   });
 });

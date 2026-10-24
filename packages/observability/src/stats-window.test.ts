@@ -10,7 +10,8 @@ import {
 const T0 = 1_800_000_000_000; // aligned to a 10 s boundary
 
 function setup(startOffsetMs = 0) {
-  let now = T0 + startOffsetMs;
+  // Monotonic time drives the buckets; the wall clock only anchors timestamps at startup.
+  let monotonic = 50_000;
   let seed = 7;
   const random = () => {
     seed = (seed * 16807) % 2147483647;
@@ -19,13 +20,14 @@ function setup(startOffsetMs = 0) {
   const window = new StatsWindow({
     routes: ['orders', 'pay'],
     upstreams: ['up'],
-    now: () => now,
+    wallClock: () => T0 + startOffsetMs,
+    monotonic: () => monotonic,
     random,
   });
   return {
     window,
     advance: (ms: number) => {
-      now += ms;
+      monotonic += ms;
     },
   };
 }
@@ -127,7 +129,8 @@ describe('StatsWindow percentiles (plan §2.1)', () => {
     const { p50, p95, p99 } = window.routeSeries('orders')?.buckets[0]?.latency ?? ({} as never);
     expect([p50.value, p95.value, p99.value]).toEqual([50, 95, 99]);
     expect([p50.method, p50.observations, p50.samples]).toEqual(['exact', 100, 100]);
-    expect([p50.confidence, p95.confidence, p99.confidence]).toEqual(['ok', 'ok', 'low']);
+    // 100 samples are exact for this bucket but below every accuracy target (385 / 457 / 1522).
+    expect([p50.confidence, p95.confidence, p99.confidence]).toEqual(['low', 'low', 'low']);
     expect(p99.tailSamples).toBe(1);
   });
 
@@ -169,7 +172,12 @@ describe('StatsWindow percentiles (plan §2.1)', () => {
     // Effective sample size (512 + 5120)² / (512·1² + 512·10²) ≈ 613.
     expect(latency?.p50.samples).toBe(613);
     expect(latency?.p99.tailSamples).toBe(6);
-    expect(latency?.p99.confidence).toBe('ok');
+    // ESS 613 meets the p50 (385) and p95 (457) targets but not p99 (1522).
+    expect([latency?.p50.confidence, latency?.p95.confidence, latency?.p99.confidence]).toEqual([
+      'ok',
+      'ok',
+      'low',
+    ]);
   });
 });
 
@@ -237,5 +245,80 @@ describe('StatsWindow memory and contracts (plan §2.2, §5.1)', () => {
     };
     expect(statsResponseSchema.safeParse(stats).success).toBe(true);
     expect(upstreamSeriesSchema.safeParse(window.upstreamSeries('up')).success).toBe(true);
+  });
+});
+
+describe('StatsWindow clock behavior (ADR-0038 review)', () => {
+  it('ignores wall-clock jumps after startup: buckets follow monotonic time', () => {
+    let wall = T0;
+    let monotonic = 0;
+    const window = new StatsWindow({
+      routes: ['r'],
+      upstreams: [],
+      wallClock: () => wall,
+      monotonic: () => monotonic,
+    });
+    window.recordRequest({ routeId: 'r', statusCode: 200, code: undefined, latencyMs: 1 });
+    wall = T0 - 3_600_000; // NTP steps the clock back an hour
+    monotonic += 10_000;
+    window.recordRequest({ routeId: 'r', statusCode: 200, code: undefined, latencyMs: 1 });
+    wall = T0 + 86_400_000; // and then a day forward
+    monotonic += 10_000;
+    window.recordRequest({ routeId: 'r', statusCode: 200, code: undefined, latencyMs: 1 });
+    const buckets = window.routeSeries('r')?.buckets ?? [];
+    expect(buckets.map((b) => [b.start - T0, b.counters.requests])).toEqual([
+      [0, 1],
+      [10_000, 1],
+      [20_000, 1],
+    ]);
+    expect(window.envelope().generatedAt).toBe(T0 + 20_000);
+  });
+
+  it('never runs backwards even if the monotonic source does, so stale slots are never reused', () => {
+    let monotonic = 100_000;
+    const window = new StatsWindow({
+      routes: ['r'],
+      upstreams: [],
+      wallClock: () => T0,
+      monotonic: () => monotonic,
+    });
+    monotonic += 25_000;
+    window.recordRequest({ routeId: 'r', statusCode: 200, code: undefined, latencyMs: 1 });
+    monotonic -= 60_000; // pathological: the source jumps back a minute
+    window.recordRequest({ routeId: 'r', statusCode: 200, code: undefined, latencyMs: 1 });
+    const series = window.routeSeries('r');
+    // Both requests land in the newest bucket; nothing is written into an older slot.
+    expect(series?.buckets.map((b) => b.counters.requests)).toEqual([0, 0, 2]);
+    expect(series?.buckets.every((b) => b.durationMs >= 0)).toBe(true);
+    expect(series?.window.rates.rps).not.toBeNull();
+  });
+
+  it('starts fresh after a long suspension without reusing old counts', () => {
+    const { window, advance } = setup();
+    for (let i = 0; i < 9; i++) ok(window, 'orders');
+    advance(3_600_000); // the process was suspended for an hour
+    const series = window.routeSeries('orders');
+    expect(series?.buckets).toHaveLength(30);
+    expect(series?.window.counters.requests).toBe(0);
+    expect(series?.window.rates.rps).toBe(0);
+    expect(series?.window.rates.successRate).toBeNull();
+  });
+
+  it('keeps rates finite at zero elapsed time', () => {
+    const { window } = setup();
+    ok(window, 'orders');
+    const rates = window.routeSeries('orders')?.window.rates;
+    expect(rates?.rps).toBeNull(); // 0 ms covered: unknown, not Infinity
+    expect(Object.values(rates ?? {}).every((v) => v === null || Number.isFinite(v))).toBe(true);
+  });
+});
+
+describe('StatsWindow counter saturation (ADR-0038 review)', () => {
+  it('saturates at 2^32 - 1 instead of wrapping', () => {
+    const { window } = setup();
+    window.recordRetries('orders', 'up', 3_000_000_000);
+    window.recordRetries('orders', 'up', 3_000_000_000);
+    expect(window.routeSeries('orders')?.window.counters.retries).toBe(4_294_967_295);
+    expect(window.upstreamSeries('up')?.window.counters.retries).toBe(4_294_967_295);
   });
 });

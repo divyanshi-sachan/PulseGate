@@ -238,3 +238,12 @@ Format: date · goal · what changed · decisions (ADR links) · open threads.
 - **Verified:** 30 unit tests, 10/10 new mutations, benchmark within formula +12 % with no growth over 1M requests.
 - **Mistake caught:** the first benchmark version undercounted memory by ~20 % (lazy ArrayBuffer release across configs in one process);
   fixed by isolating each config in a child process. Not yet wired into the gateway (step 2).
+
+## 2026-10-24 · ADR-0038 review: quantiles, confidence, overflow, clocks
+- **Changed:** confidence replaced by an accuracy-derived rule (95 % that the estimate lies within ±5 / ±2 / ±0.5 percentile points →
+  n ≥ 385 / 457 / 1,522), verified by Monte Carlo; buckets now follow a monotonic clock anchored at startup and clamped to never
+  run backwards; counters saturate at 2³² − 1; new weighted-quantile tests (fractional weights, ties, exact boundaries); 3 new
+  mutations, ESS mutation re-pointed; ADR-0038 *Review*; plan §2.1.
+- **Found:** the old "≥ 5 tail samples" rule fails the p99 accuracy target (< 90 % coverage at n = 500); the old wall-clock bucketing
+  could reset a newer slot after a backward clock step.
+- **Note:** a per-bucket p99 can now never be "ok" (≤ 512 samples), an honest consequence documented for the dashboard.
