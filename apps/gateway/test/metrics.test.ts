@@ -260,3 +260,124 @@ describe('/metrics (ADR-0036)', () => {
     }
   });
 });
+
+describe('metrics review checks (ADR-0036 review)', () => {
+  it('serves /metrics only on the operations listener', async () => {
+    const { gw } = await setup([{ id: 'orders' }]);
+    const publicResponse = await send(gw.port, { path: '/metrics' });
+    expect(publicResponse.status).toBe(404);
+    expect(publicResponse.body).toContain('ROUTE_NOT_FOUND');
+    expect(publicResponse.body).not.toContain('pulsegate_');
+    expect((await gw.gateway.operations.inject({ url: '/metrics' })).statusCode).toBe(200);
+  });
+
+  it('counts a cache hit as a request but not as an upstream attempt', async () => {
+    const { gw } = await setup([{ id: 'cached', cache: { enabled: true, ttlSeconds: 60 } }]);
+    await send(gw.port, { path: '/api/orders/1' });
+    await send(gw.port, { path: '/api/orders/1' });
+    await send(gw.port, { path: '/api/orders/1' });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const m = await scrape(gw);
+    expect(value(m, 'pulsegate_requests_total', { route: 'cached' })).toBe(3);
+    expect(value(m, 'pulsegate_upstream_requests_total')).toBe(1);
+    expect(value(m, 'pulsegate_upstream_duration_seconds_count')).toBe(1);
+    expect(value(m, 'pulsegate_retries_total')).toBe(0);
+  });
+
+  it('follows a full breaker cycle: closed -> open -> half-open -> closed', async () => {
+    let healthy = false;
+    const upstream = await startUpstream((req, res) => {
+      if (healthy) res.end('ok');
+      else req.socket.destroy();
+    });
+    cleanups.push(() => upstream.close());
+    let clock = 0;
+    const gw = await startGateway(
+      configFor(upstream.url, [{ id: 'flappy' }], {
+        circuitBreaker: { failureThreshold: 1, openDurationMs: 1000 },
+      }),
+      { logger: false, breakerClock: () => clock },
+    );
+    cleanups.push(() => gw.close());
+    await send(gw.port, { path: '/api/orders' }); // fail -> open
+    await send(gw.port, { path: '/api/orders' }); // rejected while open
+    healthy = true;
+    clock += 1000;
+    await send(gw.port, { path: '/api/orders' }); // probe succeeds -> closed
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const m = await scrape(gw);
+    const transition = (from: string, to: string) =>
+      value(m, 'pulsegate_circuit_breaker_transitions_total', {
+        upstream: 'orders-service',
+        from,
+        to,
+      });
+    expect([
+      transition('closed', 'open'),
+      transition('open', 'half-open'),
+      transition('half-open', 'closed'),
+    ]).toEqual([1, 1, 1]);
+    expect(
+      value(m, 'pulsegate_circuit_breaker_state', { upstream: 'orders-service', state: 'closed' }),
+    ).toBe(1);
+    expect(
+      value(m, 'pulsegate_circuit_breaker_state', { upstream: 'orders-service', state: 'open' }),
+    ).toBe(0);
+    expect(value(m, 'pulsegate_upstream_requests_total')).toBe(2); // the failure and the probe
+    expect(value(m, 'pulsegate_requests_total', { route: 'flappy', code: 'CIRCUIT_OPEN' })).toBe(1);
+  });
+
+  it('stays internally consistent across a mix of hits, retries, aborts and errors', async () => {
+    // The flaky path fails only on its own first call, whatever else happened before.
+    let flakyCalls = 0;
+    const upstream = await startUpstream((req, res) => {
+      const url = req.url ?? '';
+      if (url.includes('flaky') && ++flakyCalls === 1) {
+        res.statusCode = 503;
+        res.end('busy');
+      } else if (url.includes('slow')) setTimeout(() => res.end('late'), 300);
+      else res.end('ok');
+    });
+    cleanups.push(() => upstream.close());
+    const gw = await startGateway(
+      configFor(upstream.url, [
+        { id: 'mixed', retries: { maxAttempts: 2 }, cache: { enabled: true, ttlSeconds: 60 } },
+      ]),
+      { logger: false, random: () => 0 },
+    );
+    cleanups.push(() => gw.close());
+
+    const sent = { total: 0 };
+    const go = async (path: string) => {
+      sent.total++;
+      return send(gw.port, { path });
+    };
+    await go('/api/orders/cached');
+    await go('/api/orders/cached'); // hit
+    await go('/api/orders/flaky-1'); // 503 then 200
+    await go('/nope'); // 404 unmatched
+    sent.total++;
+    await new Promise<void>((resolve) => {
+      const req = httpRequest({ host: '127.0.0.1', port: gw.port, path: '/api/orders/slow' });
+      req.on('error', () => {
+        resolve();
+      });
+      req.end();
+      setTimeout(() => {
+        req.destroy();
+        resolve();
+      }, 50);
+    });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    const m = await scrape(gw);
+    expect(value(m, 'pulsegate_requests_total')).toBe(sent.total);
+    expect(value(m, 'pulsegate_request_duration_seconds_count')).toBe(sent.total);
+    expect(value(m, 'pulsegate_active_requests')).toBe(0);
+    // Attempts: cached miss 1 + flaky 2 + slow 1 (aborted) = 4; the hit and the 404 never reach the upstream.
+    expect(value(m, 'pulsegate_upstream_requests_total')).toBe(4);
+    expect(value(m, 'pulsegate_upstream_requests_total', { outcome: 'aborted' })).toBe(1);
+    expect(value(m, 'pulsegate_retries_total', { route: 'mixed' })).toBe(1);
+    expect(value(m, 'pulsegate_requests_total', { code: 'CLIENT_ABORTED' })).toBe(1);
+  });
+});

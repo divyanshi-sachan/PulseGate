@@ -352,7 +352,14 @@ function buildPublicServer(
           const routeId = match.route.id;
           capture = {
             begin: (statusCode, headers) => {
-              const verdict = storability(statusCode, normalizeHeaders(headers), routeCache);
+              // Freshness counts from when the response arrived, not when its body finished.
+              const receivedAtMs = cacheNow();
+              const verdict = storability(
+                statusCode,
+                normalizeHeaders(headers),
+                routeCache,
+                receivedAtMs,
+              );
               if (!verdict.storable) {
                 outcome.cacheStore = 'not_storable';
                 metrics.cacheStore(routeId, 'not_storable');
@@ -361,7 +368,7 @@ function buildPublicServer(
               return {
                 maxBytes: routeCache.maxResponseBytes,
                 complete: (body) => {
-                  const storedAtMs = cacheNow();
+                  const storedAtMs = receivedAtMs;
                   outcome.cacheStore = 'stored';
                   metrics.cacheStore(routeId, 'stored');
                   void cache.set(key, {

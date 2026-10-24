@@ -1,6 +1,6 @@
 # ADR-0036: Response cache and Prometheus metrics (Phase 5)
 
-- **Status:** Accepted (ADR-0035 decisions by the user; every rule below is Claude-chosen within them; to review)
+- **Status:** Accepted. Reviewed by the user on 2026-10-24 and approved with clarifications; see *Review*.
 - **Date:** 2026-10-24
 - **Source:** ADR-0009, ADR-0035; tech_impl §7, §11; system_design §12
 - **Implements:** `packages/cache`, `packages/observability`, gateway wiring
@@ -37,7 +37,9 @@ nothing is shared that a stricter reading would separate.
   nothing is stored.
 
 ### TTL and bounds
-- TTL = `min(cache.ttlSeconds, s-maxage ?? max-age)`.
+- TTL = `min(cache.ttlSeconds, upstream lifetime) − Age`, counted from when the response **arrived**. The upstream
+  lifetime is `s-maxage`, else `max-age`, else `Expires − Date` (RFC 9111 §4.2.1); a malformed value is treated as
+  stale. A TTL ≤ 0 is never stored. Response `Pragma: no-cache` counts when there's no `Cache-Control`. *(Review fixes.)*
 - Global `responseCache.maxEntries` (default **10,000**) and `responseCache.maxBytes` (default **64 MiB**) bound the whole
   cache. A per-entry size limit alone would allow 10,000 × 256 KiB = 2.5 GB.
 - Eviction is least-recently-used until both bounds hold. Expired entries are dropped on access and by a periodic sweep.
@@ -84,6 +86,40 @@ Every label value comes from a **bounded set**:
 
 Never paths, request ids, client ids, IPs or keys (tech_impl §11). A test sprays random paths and clients and asserts
 that the label sets don't grow.
+
+## Review (2026-10-24, user): clarifications and how each is met
+1. **Cache safety:** `Set-Cookie`, `private` (any case), `no-store`, `no-cache` (incl. `no-cache="…"`), zero or malformed
+   `max-age`/`s-maxage`, unconfigured `Vary`, and `Vary: *` (alone or combined) are never stored (unit tests). Mutations
+   cover `private`, `Set-Cookie` and `Pragma`.
+2. **Isolation:**
+   - Clients are isolated by default and sharing needs `scope: "shared"` (integration tests).
+   - Keys include every configured `varyHeaders` value (unit: 4 combinations → 4 keys) and never credentials (unit:
+     request with `x-api-key`/`authorization`/`cookie` → key free of them). Config also forbids credential headers in
+     `varyHeaders`.
+   - Mutation: dropping the client partition.
+3. **Memory:**
+   - 10,000 entries / 64 MiB kept.
+   - Byte accounting is exact across set, replace, delete, LRU and expiry (unit).
+   - Both bounds hold under 2,000 interleaved concurrent operations (unit) and 100 concurrent distinct requests through
+     the gateway: entries ≤ 10, bytes ≤ 600, `evictions_total{capacity} = stored − entries`.
+   - Oversized streamed bodies reach the client in full but aren't stored.
+4. **TTL:** **gaps found and fixed.** `Expires` and the upstream `Age` were ignored, a malformed `max-age` fell back to the
+   route TTL, response `Pragma: no-cache` was ignored, and freshness counted from the end of the body. All five are fixed:
+   - Unit and end-to-end tests: `max-age=30, Age: 25` → a HIT at 4 s and a MISS at 6 s; `Expires: 0` is never stored.
+   - Mutations: ignoring `Age`, ignoring `Expires`.
+5. **Streaming:**
+   - Never stored on overflow, on an upstream stream failure, or on a client abort. Tests: a broken upstream body →
+     `stored` stays 0; a client abandoning a slow response → no entry, and the upstream connection is released (open
+     connections → 0).
+   - Mutation: storing after a stream failure.
+6. **Labels:** bounded sets only (unit + 300-request spray). Requests and upstream attempts are separate families.
+7. **Correctness:**
+   - Hits add a request but no upstream attempt.
+   - A mixed run of a hit, a retry, a client abort and a 404 gives total requests = requests sent, attempts = 4
+     (1 aborted), retries = 1, in-flight = 0.
+   - A full breaker cycle counts closed → open → half-open → closed, and the state gauge ends at closed.
+   - `/metrics` on the public port is a normalized 404 with no metric text; only the operations listener serves it.
+8. **Logging:** documented below. `pulsegate_cache_stores_total` is the reliable record of what was stored.
 
 ## Implementation notes
 - The tee reports `too_large` **as soon as** the copy overflows, so the request log line can include it.

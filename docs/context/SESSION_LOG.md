@@ -198,3 +198,15 @@ Format: date · goal · what changed · decisions (ADR links) · open threads.
 - **Verified:** 294 tests (Redis required), 21/21 mutations, Docker cache + metrics, GitHub CI green on 55428b1 (check 111 s, docker 42 s).
 - **Fixed along the way:** a sloppy first draft of the breaker+cache test (placeholder upstream) rewritten before running; `too_large`
   reported eagerly so it reaches the log; label test now excludes Node runtime metrics (GC `kind` label).
+
+## 2026-10-24 · ADR-0036 review
+- **Review (user):** approved with 8 clarifications. Mapped each one to code and tests in ADR-0036 *Review*.
+- **Gaps found and fixed (point 4):** `Expires` and upstream `Age` were ignored, malformed `max-age` fell back to the route TTL,
+  response `Pragma: no-cache` was ignored, and freshness counted from body end. Now TTL = min(route, lifetime) − Age from receipt.
+- **Added:** unit tests (directive edge cases, Vary *, key composition, exact byte accounting, concurrent bounds), integration tests
+  (Age/Expires end to end, 100 concurrent distinct requests vs bounds, broken stream and client abort never stored + upstream released,
+  swept gauges), metrics tests (hits vs attempts, public /metrics 404, full breaker cycle, mixed-run consistency); 4 mutations.
+- **My test mistakes:** an Age-only freshness bug in my own new code (caught by its test); a metrics test whose flaky upstream shared
+  a call counter with other requests (gateway was right, test fixed).
+- **Verified:** 312 tests (Redis required), 25/25 mutations.
+- **Dashboard decided (user, all recommended):** [ADR-0037](../adr/0037-dashboard.md). Build starts after this commit.

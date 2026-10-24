@@ -32,11 +32,13 @@ the React dashboard (ADR-0035), then **Phase 6 — release and benchmarks**.
   bound; CI workflow + automated mutation suite (16 mutations) + distributed smoke script. 253 tests.
 - Phase 5: `packages/cache` (per-client keys, shared opt-in, tee-on-miss, LRU by entries+bytes), `packages/observability`
   (`/metrics`, bounded labels), X-Cache/Age headers (ADR-0036). 294 tests, 21 mutations. First CI run green.
+- ADR-0036 review: freshness gaps fixed (Expires, Age, malformed max-age, response Pragma, receipt time); review tests
+  for memory/streaming/metrics; 312 tests, 25 mutations.
 
 ## Next up (Phase 5 remainder: dashboard)
-0. Review Claude-chosen details: ADR-0026, 0028, 0033, **0036** (storability rules, cache bounds, metric names/labels).
-1. Decide the dashboard's data source and access: scrape `/metrics` vs an admin JSON API (ADR-0020 admin listener), and
-   how it's served (separate app vs static files) → ADR.
+0. Review Claude-chosen details: ADR-0026, 0028, 0033 (ADR-0036 was reviewed on 2026-10-24).
+1. Dashboard decided (ADR-0037): admin JSON API on the ADR-0020 listener, rolling 5-min window, static Vite build at
+   `/admin/ui/`, token pasted into sessionStorage. Build: admin listener + endpoints + window, then `apps/dashboard`.
 2. Build `apps/dashboard` (React + TypeScript): volume, success/error rates, p50/p95/p99, rate-limit rejections, cache hit
    ratio, breaker states (tech_impl §11).
 3. Integration test: dashboard numbers match traffic sent through the gateway (Phase 5 exit criterion).

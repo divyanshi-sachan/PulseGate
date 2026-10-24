@@ -73,19 +73,63 @@ export function cacheKey(input: CacheKeyInput): string {
 
 export type Storability =
   | { storable: true; ttlMs: number }
-  | { storable: false; reason: 'status' | 'set-cookie' | 'cache-control' | 'vary' };
+  | { storable: false; reason: 'status' | 'set-cookie' | 'cache-control' | 'vary' | 'stale' };
 
-/** Whether an upstream response may be stored, and for how long (ADR-0009, ADR-0036). */
+/** Parses a delta-seconds directive value; anything malformed counts as 0 (already stale). */
+function deltaSeconds(raw: string): number {
+  return /^\d+$/.test(raw) ? Number(raw) : 0;
+}
+
+/**
+ * The upstream's freshness lifetime in seconds (RFC 9111 §4.2.1), undefined when it gives none, plus
+ * the response's current Age. Precedence: s-maxage, then max-age, then Expires − Date. An invalid
+ * Expires (e.g. "0") means already expired; a malformed Age counts as infinitely old.
+ */
+function upstreamFreshness(
+  cacheControl: Map<string, string>,
+  headers: Record<string, string | string[] | undefined>,
+  nowMs: number,
+): { lifetime: number | undefined; age: number } {
+  let lifetime: number | undefined;
+  const shared = cacheControl.get('s-maxage');
+  const maxAge = cacheControl.get('max-age');
+  if (shared !== undefined) lifetime = deltaSeconds(shared);
+  else if (maxAge !== undefined) lifetime = deltaSeconds(maxAge);
+  else {
+    const expires = first(headers['expires']);
+    if (expires !== undefined) {
+      const expiresMs = Date.parse(expires);
+      const dateMs = Date.parse(first(headers['date']) ?? '');
+      lifetime = Number.isNaN(expiresMs)
+        ? 0
+        : (expiresMs - (Number.isNaN(dateMs) ? nowMs : dateMs)) / 1000;
+    }
+  }
+  const ageRaw = first(headers['age']);
+  const age = ageRaw === undefined ? 0 : /^\d+$/.test(ageRaw.trim()) ? Number(ageRaw) : Infinity;
+  return { lifetime, age };
+}
+
+/**
+ * Whether an upstream response may be stored, and for how long (ADR-0009, ADR-0036). The TTL is the
+ * shortest of the route TTL and the upstream's remaining freshness, so an entry never outlives what the
+ * upstream permits. `nowMs` is when the response arrived (freshness counts from receipt).
+ */
 export function storability(
   statusCode: number,
   headers: HeaderValues | Record<string, string | string[] | undefined>,
   policy: RouteCachePolicy,
+  nowMs: number = Date.now(),
 ): Storability {
   if (statusCode !== 200) return { storable: false, reason: 'status' };
   if (headers['set-cookie'] !== undefined) return { storable: false, reason: 'set-cookie' };
 
   const cacheControl = parseCacheControl(headers['cache-control']);
   if (['no-store', 'no-cache', 'private'].some((directive) => cacheControl.has(directive))) {
+    return { storable: false, reason: 'cache-control' };
+  }
+  // HTTP/1.0 Pragma counts only when Cache-Control is absent.
+  if (headers['cache-control'] === undefined && /no-cache/i.test(first(headers['pragma']) ?? '')) {
     return { storable: false, reason: 'cache-control' };
   }
 
@@ -97,16 +141,12 @@ export function storability(
     return { storable: false, reason: 'vary' };
   }
 
-  let ttlSeconds = policy.ttlSeconds;
-  for (const directive of ['s-maxage', 'max-age']) {
-    const raw = cacheControl.get(directive);
-    if (raw === undefined) continue;
-    const seconds = Number(raw);
-    if (Number.isFinite(seconds) && seconds >= 0) ttlSeconds = Math.min(ttlSeconds, seconds);
-    break;
-  }
-  if (ttlSeconds <= 0) return { storable: false, reason: 'cache-control' };
-  return { storable: true, ttlMs: ttlSeconds * 1000 };
+  // The entry may live for the route TTL, but never past the upstream's remaining freshness; it is
+  // already `age` seconds old when it arrives.
+  const { lifetime, age } = upstreamFreshness(cacheControl, headers, nowMs);
+  const ttlSeconds = Math.min(policy.ttlSeconds, lifetime ?? Infinity) - age;
+  if (!(ttlSeconds > 0)) return { storable: false, reason: 'stale' };
+  return { storable: true, ttlMs: Math.floor(ttlSeconds * 1000) };
 }
 
 /** Headers safe to replay from cache: no cookies, no per-request ids (ADR-0036). */

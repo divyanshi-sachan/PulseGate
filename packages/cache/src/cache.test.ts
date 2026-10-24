@@ -72,6 +72,45 @@ describe('MemoryResponseCache (ADR-0036)', () => {
     expect(cache.stats()).toMatchObject({ entries: 1, bytes: 200 });
   });
 
+  it('accounts bytes exactly across sets, replacements, deletes, evictions and expiry', async () => {
+    let now = 0;
+    const cache = new MemoryResponseCache({ maxEntries: 3, maxBytes: 10_000, now: () => now });
+    const withHeaders: CachedResponse = {
+      ...entry(100),
+      headers: { 'content-type': 'text/plain' },
+    };
+    const headerBytes = 'content-type'.length + 'text/plain'.length;
+    await cache.set('a', withHeaders);
+    expect(cache.stats().bytes).toBe(100 + headerBytes);
+    await cache.set('a', entry(40));
+    expect(cache.stats().bytes).toBe(40);
+    await cache.set('b', entry(10));
+    await cache.set('c', entry(20, 500));
+    await cache.set('d', entry(30)); // evicts a (LRU)
+    expect(cache.stats()).toMatchObject({ entries: 3, bytes: 60 });
+    await cache.delete('b');
+    expect(cache.stats().bytes).toBe(50);
+    now = 500;
+    cache.sweep(); // c expires
+    expect(cache.stats()).toMatchObject({ entries: 1, bytes: 30 });
+    await cache.delete('d');
+    expect(cache.stats()).toMatchObject({ entries: 0, bytes: 0 });
+  });
+
+  it('keeps both bounds under many interleaved concurrent operations', async () => {
+    const cache = new MemoryResponseCache({ maxEntries: 50, maxBytes: 5000, now: () => 0 });
+    await Promise.all(
+      Array.from({ length: 2000 }, async (_, i) => {
+        const key = `k${String(i % 300)}`;
+        if (i % 3 === 0) await cache.get(key);
+        else await cache.set(key, entry(1 + (i % 200)));
+        const { entries, bytes } = cache.stats();
+        expect(entries).toBeLessThanOrEqual(50);
+        expect(bytes).toBeLessThanOrEqual(5000);
+      }),
+    );
+  });
+
   it('sweeps expired entries', async () => {
     let now = 0;
     const evictions: string[] = [];
@@ -142,7 +181,7 @@ describe('cache rules (ADR-0035, ADR-0036)', () => {
       storable: false,
       reason: 'set-cookie',
     });
-    for (const cc of ['private', 'no-store', 'no-cache', 'public, max-age=0', 's-maxage=0']) {
+    for (const cc of ['private', 'no-store', 'no-cache', 'Private', 'no-cache="Set-Cookie"']) {
       expect(storability(200, { 'cache-control': cc }, policy)).toEqual({
         storable: false,
         reason: 'cache-control',
@@ -157,6 +196,121 @@ describe('cache rules (ADR-0035, ADR-0036)', () => {
       storable: true,
       ttlMs: 30_000,
     });
+  });
+
+  it('treats zero or malformed freshness as stale', () => {
+    for (const cc of ['public, max-age=0', 's-maxage=0', 'max-age=abc', 'max-age=-5']) {
+      expect(storability(200, { 'cache-control': cc }, policy, 0)).toEqual({
+        storable: false,
+        reason: 'stale',
+      });
+    }
+  });
+
+  it('never stores Vary: *, alone or combined with configured headers', () => {
+    const withAccept = { ...policy, varyHeaders: ['accept'] };
+    expect(storability(200, { vary: '*' }, withAccept)).toEqual({
+      storable: false,
+      reason: 'vary',
+    });
+    expect(storability(200, { vary: 'Accept, *' }, withAccept)).toEqual({
+      storable: false,
+      reason: 'vary',
+    });
+  });
+
+  it('honors Pragma: no-cache only when Cache-Control is absent', () => {
+    expect(storability(200, { pragma: 'no-cache' }, policy)).toEqual({
+      storable: false,
+      reason: 'cache-control',
+    });
+    expect(
+      storability(200, { pragma: 'no-cache', 'cache-control': 'max-age=10' }, policy, 0),
+    ).toEqual({
+      storable: true,
+      ttlMs: 10_000,
+    });
+  });
+
+  it('uses Expires minus Date when no max-age is given, and treats invalid Expires as expired', () => {
+    const date = 'Sat, 24 Oct 2026 10:00:00 GMT';
+    expect(
+      storability(
+        200,
+        { date, expires: 'Sat, 24 Oct 2026 10:00:20 GMT' },
+        policy,
+        Date.parse(date),
+      ),
+    ).toEqual({ storable: true, ttlMs: 20_000 });
+    expect(storability(200, { date, expires: 'Sat, 24 Oct 2026 09:00:00 GMT' }, policy)).toEqual({
+      storable: false,
+      reason: 'stale',
+    });
+    expect(storability(200, { expires: '0' }, policy)).toEqual({
+      storable: false,
+      reason: 'stale',
+    });
+    // max-age wins over Expires.
+    expect(storability(200, { 'cache-control': 'max-age=5', expires: '0' }, policy, 0)).toEqual({
+      storable: true,
+      ttlMs: 5000,
+    });
+  });
+
+  it('subtracts the upstream Age so entries never outlive their freshness', () => {
+    expect(storability(200, { 'cache-control': 'max-age=30', age: '25' }, policy, 0)).toEqual({
+      storable: true,
+      ttlMs: 5000,
+    });
+    expect(storability(200, { 'cache-control': 'max-age=30', age: '30' }, policy, 0)).toEqual({
+      storable: false,
+      reason: 'stale',
+    });
+    // Age without explicit freshness shortens the route TTL; a malformed Age counts as stale.
+    expect(storability(200, { age: '10' }, policy, 0)).toEqual({ storable: true, ttlMs: 20_000 });
+    expect(storability(200, { age: 'soon' }, policy, 0)).toEqual({
+      storable: false,
+      reason: 'stale',
+    });
+  });
+
+  it('never puts credentials into keys, even when the request carries them', () => {
+    const key = cacheKey({
+      routeId: 'r',
+      method: 'GET',
+      rawPath: '/a',
+      rawQuery: '',
+      partition: 'client:acme',
+      varyHeaders: ['accept'],
+      requestHeaders: {
+        accept: 'text/plain',
+        'x-api-key': 'pg_secret',
+        authorization: 'Bearer tok',
+        cookie: 's=1',
+      },
+    });
+    expect(key).not.toMatch(/pg_secret|Bearer|tok|s=1/);
+    expect(key).toContain('text/plain');
+  });
+
+  it('includes every configured vary header value in the key', () => {
+    const base = {
+      routeId: 'r',
+      method: 'GET',
+      rawPath: '/a',
+      rawQuery: '',
+      partition: 'shared',
+      varyHeaders: ['accept', 'accept-language'],
+    };
+    const keys = new Set(
+      [
+        { accept: 'a', 'accept-language': 'en' },
+        { accept: 'a', 'accept-language': 'fr' },
+        { accept: 'b', 'accept-language': 'en' },
+        { accept: 'a' },
+      ].map((requestHeaders) => cacheKey({ ...base, requestHeaders })),
+    );
+    expect(keys.size).toBe(4);
   });
 
   it('caps the TTL at s-maxage, else max-age', () => {

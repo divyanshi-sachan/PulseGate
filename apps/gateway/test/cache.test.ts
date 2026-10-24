@@ -1,3 +1,4 @@
+import { request as httpRequest } from 'node:http';
 import { parseClients } from '@pulsegate/config';
 import { afterEach, describe, expect, it } from 'vitest';
 import { generateApiKey, hashApiKey } from '../src/auth/api-key.ts';
@@ -43,6 +44,33 @@ function countingHandler(): Parameters<typeof startUpstream>[0] {
     if (params.get('cookie') === '1') res.setHeader('set-cookie', 'session=abc');
     const vary = params.get('vary');
     if (vary !== null) res.setHeader('vary', vary);
+    const age = params.get('age');
+    if (age !== null) res.setHeader('age', age);
+    const expires = params.get('expires');
+    if (expires !== null) res.setHeader('expires', expires);
+    if (params.get('break') === '1') {
+      // Half a body, then the connection dies: an incomplete response.
+      res.writeHead(200, { 'content-type': 'text/plain' });
+      res.write('partial');
+      setTimeout(() => req.socket.destroy(), 20);
+      return;
+    }
+    if (params.get('slow') === '1') {
+      // Ten chunks, 50 ms apart.
+      res.writeHead(200, { 'content-type': 'text/plain' });
+      let sent = 0;
+      const timer = setInterval(() => {
+        res.write(`chunk-${String(sent)};`);
+        if (++sent === 10) {
+          clearInterval(timer);
+          res.end();
+        }
+      }, 50);
+      res.on('close', () => {
+        clearInterval(timer);
+      });
+      return;
+    }
     res.statusCode = Number(params.get('status') ?? '200');
     res.setHeader('content-type', 'text/plain');
     const size = params.get('size');
@@ -227,5 +255,112 @@ describe('response cache (ADR-0036)', () => {
     const hit = await as(gw, KEY_A, '/api/orders/1');
     expect([hit.status, xcache(hit), hit.body]).toEqual([200, 'HIT', 'call-1']);
     expect(upstream.requests).toHaveLength(calls);
+  });
+});
+
+describe('cache review checks (ADR-0036 review)', () => {
+  const scrape = async (gw: RunningGateway) =>
+    (await gw.gateway.operations.inject({ url: '/metrics' })).body;
+  const metric = (text: string, line: RegExp) => Number(line.exec(text)?.[1] ?? NaN);
+
+  it('respects upstream Age and Expires end to end', async () => {
+    const { gw, advanceClock } = await setup([cached()]);
+    await as(gw, KEY_A, '/api/orders/1?cc=max-age%3D30&age=25');
+    advanceClock(4000);
+    expect(xcache(await as(gw, KEY_A, '/api/orders/1?cc=max-age%3D30&age=25'))).toBe('HIT');
+    advanceClock(2000); // 6 s > 5 s of remaining freshness
+    expect(xcache(await as(gw, KEY_A, '/api/orders/1?cc=max-age%3D30&age=25'))).toBe('MISS');
+    await as(gw, KEY_A, '/api/orders/2?expires=0');
+    expect(xcache(await as(gw, KEY_A, '/api/orders/2?expires=0'))).toBe('MISS');
+  });
+
+  it('keeps both global bounds under concurrent distinct requests and counts evictions', async () => {
+    const { gw } = await setup(
+      [cached({ rateLimit: { capacity: 1000, refillRatePerSecond: 1000 } })],
+      {
+        responseCache: { maxEntries: 10, maxBytes: 600 },
+      },
+    );
+    await Promise.all(
+      Array.from({ length: 100 }, (_, i) => as(gw, KEY_A, `/api/orders/${String(i)}`)),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    const text = await scrape(gw);
+    const entries = metric(text, /^pulsegate_cache_entries (\d+)$/m);
+    const bytes = metric(text, /^pulsegate_cache_bytes (\d+)$/m);
+    const stored = metric(
+      text,
+      /^pulsegate_cache_stores_total\{route="route-0",result="stored"\} (\d+)$/m,
+    );
+    const evicted = metric(text, /^pulsegate_cache_evictions_total\{reason="capacity"\} (\d+)$/m);
+    expect(entries).toBeLessThanOrEqual(10);
+    expect(bytes).toBeLessThanOrEqual(600);
+    expect(stored).toBe(100);
+    expect(evicted).toBe(stored - entries);
+  });
+
+  it('never stores a response whose upstream stream failed', async () => {
+    const { gw, upstream } = await setup([cached()]);
+    await as(gw, KEY_A, '/api/orders/1?break=1').catch(() => undefined);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await as(gw, KEY_A, '/api/orders/1?break=1').catch(() => undefined);
+    expect(upstream.requests).toHaveLength(2);
+    const text = await scrape(gw);
+    expect(text).not.toMatch(/pulsegate_cache_stores_total\{[^}]*result="stored"\} [1-9]/);
+  });
+
+  it('never stores a response the client abandoned, and releases the upstream connection', async () => {
+    const { gw, upstream } = await setup([cached()]);
+    await new Promise<void>((resolve) => {
+      const req = httpRequest({
+        host: '127.0.0.1',
+        port: gw.port,
+        path: '/api/orders/1?slow=1',
+        headers: { 'x-api-key': KEY_A },
+      });
+      req.on('error', () => {
+        resolve();
+      });
+      req.on('response', (res) => {
+        res.on('data', () => undefined);
+        res.on('error', () => undefined);
+      });
+      req.end();
+      setTimeout(() => {
+        req.destroy();
+        resolve();
+      }, 140);
+    });
+    let open = -1;
+    for (let i = 0; i < 40 && open !== 0; i++) {
+      open = await upstream.openConnections();
+      if (open !== 0) await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    expect(open).toBe(0);
+    const again = await as(gw, KEY_A, '/api/orders/1?slow=1');
+    expect([xcache(again), again.body.split(';').length]).toEqual(['MISS', 11]);
+    expect(upstream.requests).toHaveLength(2);
+  });
+
+  it('drops expired entries from the gauges once swept', async () => {
+    const upstream = await startUpstream(countingHandler());
+    cleanups.push(() => upstream.close());
+    let now = 0;
+    const gw = await startGateway(configFor(upstream.url, [cached()]), {
+      logger: false,
+      clients,
+      cacheClock: () => now,
+      sweepIntervalMs: 20,
+    });
+    cleanups.push(() => gw.close());
+    await as(gw, KEY_A, '/api/orders/1');
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(await scrape(gw)).toMatch(/^pulsegate_cache_entries 1$/m);
+    now += 31_000;
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    const text = await scrape(gw);
+    expect(text).toMatch(/^pulsegate_cache_entries 0$/m);
+    expect(text).toMatch(/^pulsegate_cache_bytes 0$/m);
+    expect(text).toMatch(/^pulsegate_cache_evictions_total\{reason="expired"\} 1$/m);
   });
 });
