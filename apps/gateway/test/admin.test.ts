@@ -189,10 +189,19 @@ describe('admin listener: enablement and token rules (ADR-0020)', () => {
 });
 
 describe('admin listener: authentication on every route (plan §5)', () => {
-  it('registers exactly the five API routes (plus HEAD)', async () => {
+  it('registers the five API routes behind the token and only the UI routes as public', async () => {
     const { gateway } = await setup();
-    const gets = gateway.adminRoutes.filter((route) => route.method === 'GET').map((r) => r.url);
-    expect(gets.sort()).toEqual(Object.keys(ENDPOINTS).sort());
+    const gets = (isPublic: boolean) =>
+      gateway.adminRoutes
+        .filter((route) => route.method === 'GET' && route.public === isPublic)
+        .map((r) => r.url)
+        .sort();
+    expect(gets(false)).toEqual(Object.keys(ENDPOINTS).sort());
+    // The only token-free routes: the dashboard's static files (ADR-0037).
+    expect(gets(true)).toEqual(['/admin/ui', '/admin/ui/*']);
+    expect(
+      gateway.adminRoutes.filter((r) => r.public).every((r) => r.url.startsWith('/admin/ui')),
+    ).toBe(true);
   });
 
   const badCredentials: [string, Record<string, string>][] = [
@@ -210,7 +219,7 @@ describe('admin listener: authentication on every route (plan §5)', () => {
     async (_name, headers) => {
       const { gateway, adminPort } = await setup();
       expect(gateway.adminRoutes.length).toBeGreaterThan(0);
-      for (const route of gateway.adminRoutes) {
+      for (const route of gateway.adminRoutes.filter((r) => !r.public)) {
         const response = await send(adminPort, { method: route.method, path: route.url, headers });
         expect(response.status, `${route.method} ${route.url}`).toBe(401);
         expect(response.headers['www-authenticate']).toBe('Bearer');

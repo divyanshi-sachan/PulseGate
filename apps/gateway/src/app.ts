@@ -36,6 +36,7 @@ import fastify, {
 } from 'fastify';
 import { buildAdminServer, type AdminRoute, type RateLimitBackend } from './admin/admin-server.ts';
 import { AdminTokenVerifier } from './admin/admin-token.ts';
+import { StaticUi } from './admin/static-ui.ts';
 import {
   ApiKeyAuthenticator,
   AuthenticationError,
@@ -78,6 +79,11 @@ export interface GatewayOptions {
    * stats window. Shorter than 32 characters: startup fails.
    */
   adminToken?: string;
+  /**
+   * Dashboard build directory served at /admin/ui/ (ADR-0037), from PULSEGATE_ADMIN_UI_DIR. Only with the admin
+   * listener; a directory without index.html fails startup.
+   */
+  adminUiDir?: string;
   /** Clocks and reservoir randomness for the admin stats window; fake in tests (ADR-0038). */
   statsClocks?: { wallClock?: () => number; monotonic?: () => number; random?: () => number };
 }
@@ -785,6 +791,10 @@ export function createGateway(config: GatewayConfig, options: GatewayOptions = {
       : { ready: true, body: { status: 'ready', redis: 'unavailable', rateLimit: 'degraded' } };
   };
   const operations = buildOperationsServer(options, readiness, metrics);
+  const ui =
+    options.adminUiDir === undefined || options.adminUiDir === ''
+      ? undefined
+      : new StaticUi(options.adminUiDir);
   const admin =
     verifier === undefined || stats === undefined
       ? undefined
@@ -807,6 +817,7 @@ export function createGateway(config: GatewayConfig, options: GatewayOptions = {
           },
           verifier,
           fastifyOptions: baseOptions(options),
+          ...(ui === undefined ? {} : { ui }),
         });
   let closing: Promise<ShutdownResult> | undefined;
 
@@ -853,6 +864,15 @@ export function createGateway(config: GatewayConfig, options: GatewayOptions = {
       if (admin === undefined) {
         publicServer.log.info('admin listener disabled: ADMIN_TOKEN is not set (ADR-0020)');
       } else {
+        if (ui === undefined) {
+          publicServer.log.info(
+            'admin UI not served: PULSEGATE_ADMIN_UI_DIR is not set (ADR-0037)',
+          );
+        } else if (!(await ui.check())) {
+          throw new GatewayStartupError(
+            'PULSEGATE_ADMIN_UI_DIR has no index.html; build the dashboard or unset the variable (ADR-0037)',
+          );
+        }
         await admin.app.listen({ host: config.admin.host, port: config.admin.port });
       }
       await publicServer.listen({ host: config.server.host, port: config.server.port });

@@ -265,3 +265,12 @@ Format: date · goal · what changed · decisions (ADR links) · open threads.
 - **Found:** `retryRate` can exceed 1 (retries per upstream-reaching request), so the schema's [0, 1] bound was wrong;
   the abort path never counted retries in Prometheus.
 - **Next:** step 3, static UI serving and security headers.
+
+## 2026-10-24 · Dashboard step 3: static UI serving
+- **Changed:** `/admin/ui/*` served from `PULSEGATE_ADMIN_UI_DIR` without a token (exemption tied to the matched route's
+  `config.public`, not the URL); fail-closed path rules (ADR-0019 checks, decoded-segment checks, real-path containment,
+  extension allow-list); index fallback only for extensionless paths; immutable hashed assets; strict CSP and security
+  headers; startup fails on a UI dir without index.html; 32 socket tests incl. 20 attack paths; 6 mutations (53 total);
+  ADR-0040.
+- **Note:** the CSP forbids inline styles; step 5 must confirm Recharts works under it (Playwright).
+- **Next:** step 4, `apps/dashboard` scaffold.

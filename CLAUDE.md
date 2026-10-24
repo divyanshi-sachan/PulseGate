@@ -92,7 +92,7 @@ namespaces or parameter properties (`erasableSyntaxOnly`). Existing: `packages/s
 `packages/admin-contract` (browser-safe Zod contracts for /admin/api/*, shared with the dashboard; ADR-0038),
 `packages/cache` (MemoryResponseCache + cacheability rules; ADR-0036), `packages/observability` (bounded Prometheus
 metrics, served at `/metrics` on the operations listener; ADR-0036),
-`apps/gateway` (Fastify listeners, admin API on 9090 only with `ADMIN_TOKEN` ≥ 32 chars, ADR-0039; validate → match → ApiKeyAuthenticator → rate limit → ProxyService executor with
+`apps/gateway` (Fastify listeners, admin API on 9090 only with `ADMIN_TOKEN` ≥ 32 chars, ADR-0039; dashboard files at `/admin/ui/` from `PULSEGATE_ADMIN_UI_DIR`, ADR-0040; validate → match → ApiKeyAuthenticator → rate limit → ProxyService executor with
 breaker permits and retries; ADR-0028, 0031, 0033). New workspace packages must also be added to the Dockerfile's manifest COPY list.
 Clients file (`PULSEGATE_CLIENTS`, example `config/clients.example.yaml`) holds SHA-256 key digests only.
 Unit tests sit next to code in `src/`; socket-level integration tests with mock upstreams in `apps/gateway/test/`.

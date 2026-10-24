@@ -36,12 +36,14 @@ try {
 
 const redisUrl = process.env['REDIS_URL'];
 const adminToken = process.env['ADMIN_TOKEN'];
+const adminUiDir = process.env['PULSEGATE_ADMIN_UI_DIR'];
 let gateway: ReturnType<typeof createGateway>;
 try {
   gateway = createGateway(config, {
     ...(clients === undefined ? {} : { clients }),
     ...(redisUrl === undefined ? {} : { redisUrl }),
     ...(adminToken === undefined ? {} : { adminToken }),
+    ...(adminUiDir === undefined ? {} : { adminUiDir }),
   });
 } catch (error) {
   // e.g. an ADMIN_TOKEN shorter than 32 characters (ADR-0020); the message never contains the token.

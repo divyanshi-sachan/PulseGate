@@ -10,8 +10,17 @@ import type { GatewayConfig } from '@pulsegate/config';
 import type { StatsWindow } from '@pulsegate/observability';
 import type { CircuitBreakerRegistry } from '@pulsegate/reliability';
 import { GatewayError } from '@pulsegate/shared';
+import { createReadStream } from 'node:fs';
 import fastify, { type FastifyReply, type FastifyServerOptions } from 'fastify';
 import type { AdminTokenVerifier } from './admin-token.ts';
+import { UI_PREFIX, UI_SECURITY_HEADERS, type StaticUi } from './static-ui.ts';
+
+declare module 'fastify' {
+  interface FastifyContextConfig {
+    /** Served without the admin token: dashboard static files only (ADR-0037, plan §5). */
+    public?: boolean;
+  }
+}
 
 export interface RateLimitBackend {
   kind: 'local' | 'redis';
@@ -29,11 +38,15 @@ export interface AdminServerDeps {
   rateLimitBackend: () => RateLimitBackend;
   verifier: AdminTokenVerifier;
   fastifyOptions: FastifyServerOptions;
+  /** Dashboard build to serve under /admin/ui/; without it those paths are 404. */
+  ui?: StaticUi;
 }
 
 export interface AdminRoute {
   method: string;
   url: string;
+  /** True for the static UI routes, the only ones exempt from the token check. */
+  public: boolean;
 }
 
 function sendError(reply: FastifyReply, error: GatewayError, requestId: string): FastifyReply {
@@ -46,8 +59,10 @@ function sendError(reply: FastifyReply, error: GatewayError, requestId: string):
 
 /**
  * Admin listener (ADR-0020, plan §5): read-only JSON under /admin/api/*, shaped by the shared contracts in
- * `@pulsegate/admin-contract`. One Bearer-token hook, registered before any route, guards every request
- * the listener receives, including unknown paths; `routes` lists what was registered for the bypass test.
+ * `@pulsegate/admin-contract`, and the dashboard's static files under /admin/ui/. One Bearer-token hook,
+ * registered before any route, guards every request the listener receives, including unknown paths. The
+ * only exemption is a route registered with `config.public`, decided by the route the router actually
+ * matched, never by inspecting the URL; `routes` lists what was registered for the bypass test.
  */
 export function buildAdminServer(deps: AdminServerDeps) {
   const { config, stats, breakers, verifier } = deps;
@@ -56,10 +71,16 @@ export function buildAdminServer(deps: AdminServerDeps) {
   const authFailures = new WeakSet<object>();
 
   app.addHook('onRoute', (route) => {
-    for (const method of [route.method].flat()) routes.push({ method, url: route.url });
+    for (const method of [route.method].flat()) {
+      routes.push({ method, url: route.url, public: route.config?.public === true });
+    }
   });
 
   app.addHook('onRequest', (request, reply, done) => {
+    if (request.routeOptions.config.public === true) {
+      done();
+      return;
+    }
     if (verifier.verify(request.headers.authorization)) {
       done();
       return;
@@ -69,13 +90,19 @@ export function buildAdminServer(deps: AdminServerDeps) {
     void sendError(reply, new GatewayError('ADMIN_AUTHENTICATION_FAILED'), request.id);
   });
 
-  // JSON only, never cached by browsers or proxies, never sniffed or framed (plan §5).
-  app.addHook('onSend', (_request, reply, payload, done) => {
-    void reply.headers({
-      'cache-control': 'no-store',
-      'x-content-type-options': 'nosniff',
-      'content-security-policy': "default-src 'none'; frame-ancestors 'none'",
-    });
+  app.addHook('onSend', (request, reply, payload, done) => {
+    if (request.routeOptions.config.public === true) {
+      // UI files set their own cache policy; UI errors are never cached.
+      void reply.headers(UI_SECURITY_HEADERS);
+      if (!reply.hasHeader('cache-control')) void reply.header('cache-control', 'no-store');
+    } else {
+      // API: JSON only, never cached by browsers or proxies, never sniffed or framed (plan §5).
+      void reply.headers({
+        'cache-control': 'no-store',
+        'x-content-type-options': 'nosniff',
+        'content-security-policy': "default-src 'none'; frame-ancestors 'none'",
+      });
+    }
     done(null, payload);
   });
 
@@ -100,6 +127,27 @@ export function buildAdminServer(deps: AdminServerDeps) {
   app.setErrorHandler((error, request, reply) => {
     request.log.warn({ err: error }, 'admin request failed');
     return sendError(reply, new GatewayError('INTERNAL_ERROR', { cause: error }), request.id);
+  });
+
+  // Dashboard static files, without a token (ADR-0037): GET and HEAD only.
+  app.get('/admin/ui', { config: { public: true } }, (_request, reply) =>
+    reply.code(308).header('location', UI_PREFIX).send(),
+  );
+  app.get(`${UI_PREFIX}*`, { config: { public: true } }, async (request, reply) => {
+    const { ui } = deps;
+    try {
+      if (ui === undefined) throw new GatewayError('ROUTE_NOT_FOUND');
+      const file = await ui.resolve(request.raw.url ?? '');
+      void reply
+        .header('content-type', file.contentType)
+        .header('content-length', String(file.size))
+        .header('cache-control', file.cacheControl);
+      // HEAD: Fastify's generated HEAD route discards the stream and keeps content-length.
+      return await reply.send(createReadStream(file.path));
+    } catch (error) {
+      if (!(error instanceof GatewayError)) throw error;
+      return sendError(reply, error, request.id);
+    }
   });
 
   const series = (id: string) => {
