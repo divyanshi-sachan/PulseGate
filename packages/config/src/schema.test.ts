@@ -379,8 +379,47 @@ describe('cache (ADR-0009)', () => {
       enabled: true,
       ttlSeconds: 30,
       maxResponseBytes: 262_144,
+      scope: 'client',
+      varyHeaders: [],
     });
   });
+});
+
+describe('cache scope and vary headers (ADR-0035, ADR-0036)', () => {
+  it('defaults the global cache bounds', () => {
+    expect(parseConfig(minimal()).responseCache).toEqual({
+      maxEntries: 10_000,
+      maxBytes: 67_108_864,
+    });
+  });
+
+  it('accepts shared scope and lowercases vary headers', () => {
+    const config = parseConfig(
+      withInput(
+        (c) =>
+          (c.routes[0]['cache'] = {
+            enabled: true,
+            ttlSeconds: 5,
+            scope: 'shared',
+            varyHeaders: ['Accept'],
+          }),
+      ),
+    );
+    expect(config.routes[0]?.cache).toMatchObject({ scope: 'shared', varyHeaders: ['accept'] });
+  });
+
+  it.each(['Authorization', 'cookie', 'X-API-Key', 'proxy-authorization'])(
+    'rejects credential header %s in varyHeaders',
+    (header) => {
+      expectIssue(
+        withInput(
+          (c) => (c.routes[0]['cache'] = { enabled: true, ttlSeconds: 5, varyHeaders: [header] }),
+        ),
+        'routes[0] ("get-orders").cache.varyHeaders[0]',
+        /must not be a credential header/,
+      );
+    },
+  );
 });
 
 describe('rate-limit mode (ADR-0005)', () => {

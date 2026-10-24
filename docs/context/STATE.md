@@ -1,10 +1,10 @@
 # Project State
 
-_Last updated: 2026-10-23 (Phase 4 complete)_
+_Last updated: 2026-10-24 (Phase 5: cache + metrics)_
 
 ## Current phase
-**Phase 4 — Redis-backed distributed rate limiting: complete** (exit criterion verified in Docker). Next is
-**Phase 5 — Caching and observability** (technical_implementation.md §14).
+**Phase 5 — Caching and observability: cache + /metrics done** (verified in Docker; CI green on GitHub). Remaining:
+the React dashboard (ADR-0035), then **Phase 6 — release and benchmarks**.
 
 ## Done
 - Product, system-design and implementation specs written.
@@ -30,14 +30,16 @@ _Last updated: 2026-10-23 (Phase 4 complete)_
   Redis readiness ping, `packages/testing`, `pnpm dev:distributed` (ADR-0034).
 - ADR-0034 review: startup fails without Redis, credential redaction, single-flight readiness with status body, TTL lower
   bound; CI workflow + automated mutation suite (16 mutations) + distributed smoke script. 253 tests.
+- Phase 5: `packages/cache` (per-client keys, shared opt-in, tee-on-miss, LRU by entries+bytes), `packages/observability`
+  (`/metrics`, bounded labels), X-Cache/Age headers (ADR-0036). 294 tests, 21 mutations. First CI run green.
 
-## Next up (Phase 5 — Caching and observability, technical_implementation.md §14)
-0. Review Claude-chosen details: ADR-0026, 0028, 0033 (Retry-After on CIRCUIT_OPEN, held responses, body-end settlement).
-   CI has not run on GitHub yet: check the first run after pushing.
-1. Q6 and Q13 decided (ADR-0035): per-client cache keys + shared opt-in; dedup deferred.
-2. Bounded in-memory response cache (ADR-0009): eligibility, key composition, TTL, size limits, hit/miss/eviction counters.
-3. Prometheus `/metrics` on the operations listener (tech_impl §11 names, bounded labels); hook into the request log points.
-4. Then, as its own step: React dashboard on top of the metrics (ADR-0035).
+## Next up (Phase 5 remainder: dashboard)
+0. Review Claude-chosen details: ADR-0026, 0028, 0033, **0036** (storability rules, cache bounds, metric names/labels).
+1. Decide the dashboard's data source and access: scrape `/metrics` vs an admin JSON API (ADR-0020 admin listener), and
+   how it's served (separate app vs static files) → ADR.
+2. Build `apps/dashboard` (React + TypeScript): volume, success/error rates, p50/p95/p99, rate-limit rejections, cache hit
+   ratio, breaker states (tech_impl §11).
+3. Integration test: dashboard numbers match traffic sent through the gateway (Phase 5 exit criterion).
 
 Exit criteria: dashboard data matches the gateway's observed behavior in integration tests.
 

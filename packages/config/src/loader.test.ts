@@ -45,6 +45,8 @@ describe('loadConfigFile', () => {
       enabled: true,
       ttlSeconds: 30,
       maxResponseBytes: 262_144,
+      scope: 'client',
+      varyHeaders: [],
     });
   });
 

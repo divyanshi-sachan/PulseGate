@@ -63,7 +63,8 @@ These come straight from the specs; violating one requires an ADR first.
   Gateway-decided 4xx never count as upstream failures.
 - **Listeners (ADR-0020, 0022):** public 8080 = proxy only; admin 9090 = `/admin/*`; operations 9091 on 127.0.0.1 =
   `/health`, `/ready`, `/metrics`. Nothing operational or administrative on the public port.
-- **Metrics:** bounded label cardinality only (route id, status class, outcome, cache result).
+- **Metrics:** bounded label cardinality only (route id, status class, outcome, cache result); `GatewayMetrics` maps
+  anything unknown to `unmatched`/`unknown`/`other`. A new metric needs a row in ADR-0036's table.
   Never request IDs, keys, or raw URLs as labels.
 - **Benchmarks:** never publish or write a number that wasn't measured. Record hardware, versions, config, workload.
 - **Scope discipline:** finish proxy → rate limiter → reliability before dashboard or distributed extras.
@@ -88,6 +89,8 @@ namespaces or parameter properties (`erasableSyntaxOnly`). Existing: `packages/s
 `packages/rate-limiter` (RateLimiter strategy + LocalTokenBucketLimiter, ADR-0032),
 `packages/reliability` (CircuitBreaker + registry, retry policy; ADR-0033),
 `packages/testing` (dev-only: Testcontainers Redis + fault-injecting TcpProxy),
+`packages/cache` (MemoryResponseCache + cacheability rules; ADR-0036), `packages/observability` (bounded Prometheus
+metrics, served at `/metrics` on the operations listener; ADR-0036),
 `apps/gateway` (Fastify listeners; validate → match → ApiKeyAuthenticator → rate limit → ProxyService executor with
 breaker permits and retries; ADR-0028, 0031, 0033). New workspace packages must also be added to the Dockerfile's manifest COPY list.
 Clients file (`PULSEGATE_CLIENTS`, example `config/clients.example.yaml`) holds SHA-256 key digests only.

@@ -40,3 +40,4 @@ Accepted ADRs **override** the spec documents where they conflict. Create new on
 | [0033](0033-retries-and-breakers.md) | Retry executor and circuit breakers (Phase 3) | Accepted (review details) |
 | [0034](0034-redis-rate-limiting.md) | Redis-backed distributed rate limiting (Phase 4) | Accepted (reviewed) |
 | [0035](0035-phase5-scope.md) | Phase 5 scope: cache partitioning, deduplication, observability | Accepted |
+| [0036](0036-response-cache-and-metrics.md) | Response cache and Prometheus metrics (Phase 5) | Accepted (review details) |

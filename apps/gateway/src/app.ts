@@ -15,6 +15,15 @@ import {
   type RateLimiter,
 } from '@pulsegate/rate-limiter';
 import { Redis } from 'ioredis';
+import {
+  cacheableHeaders,
+  cacheKey,
+  cachePartition,
+  MemoryResponseCache,
+  requestBypassReason,
+  storability,
+} from '@pulsegate/cache';
+import { GatewayMetrics } from '@pulsegate/observability';
 import { CircuitBreakerRegistry } from '@pulsegate/reliability';
 import { GatewayError, isGatewayError } from '@pulsegate/shared';
 import fastify, {
@@ -31,7 +40,12 @@ import {
   type ClientIdentity,
 } from './auth/authenticator.ts';
 import { resolveClientAddress, TrustedProxies } from './proxy/client-address.ts';
-import { CircuitOpenError, ClientAbortedError, ProxyService } from './proxy/proxy-service.ts';
+import {
+  CircuitOpenError,
+  ClientAbortedError,
+  ProxyService,
+  type BodyCapture,
+} from './proxy/proxy-service.ts';
 import { UpstreamRegistry } from './proxy/upstream-registry.ts';
 import { parseRedisUrl } from './redis/redis-url.ts';
 import { singleFlight } from './redis/single-flight.ts';
@@ -53,6 +67,10 @@ export interface GatewayOptions {
   breakerClock?: () => number;
   /** Redis connection URL, from the REDIS_URL env var; required when rateLimit.mode is "redis" (ADR-0034). */
   redisUrl?: string;
+  /** Wall clock for cache TTLs (default Date.now); fake in tests (ADR-0036). */
+  cacheClock?: () => number;
+  /** Include Node process metrics in /metrics (default true). */
+  processMetrics?: boolean;
 }
 
 export interface Gateway {
@@ -60,6 +78,8 @@ export interface Gateway {
   readonly public: FastifyInstance;
   /** Operations listener: /health and /ready (ADR-0022). */
   readonly operations: FastifyInstance;
+  /** Prometheus metrics served on the operations listener's /metrics (ADR-0036). */
+  readonly metrics: GatewayMetrics;
   /** Listens on the configured hosts and ports. */
   start(): Promise<void>;
   /**
@@ -80,6 +100,17 @@ export function newRequestId(): string {
   return `req_${randomUUID()}`;
 }
 
+/** Outgoing headers as the cache rules expect them (numbers as strings). */
+function normalizeHeaders(
+  headers: Record<string, string | string[] | number | undefined>,
+): Record<string, string | string[] | undefined> {
+  const out: Record<string, string | string[] | undefined> = {};
+  for (const [name, value] of Object.entries(headers)) {
+    out[name] = typeof value === 'number' ? String(value) : value;
+  }
+  return out;
+}
+
 interface RequestOutcome {
   routeId?: string;
   clientId?: string;
@@ -89,6 +120,12 @@ interface RequestOutcome {
   attempts?: number;
   /** "degraded" when a fail-open local fallback decided (ADR-0034). */
   rateLimitMode?: string;
+  /** hit | miss | bypass on cache-enabled routes (ADR-0036). */
+  cacheStatus?: 'hit' | 'miss' | 'bypass';
+  /** What happened to a miss's response: stored | not_storable | too_large. */
+  cacheStore?: 'stored' | 'not_storable' | 'too_large';
+  /** Request metrics are recorded exactly once (completion or abort). */
+  metricsRecorded?: boolean;
 }
 
 /** How often full buckets are swept from the local limiter (ADR-0032). */
@@ -107,9 +144,20 @@ function sendError(reply: FastifyReply, error: GatewayError, requestId: string):
 }
 
 /** Writes a normalized 400 straight to a socket Node will not hand to Fastify (ADR-0023). */
-function rejectSocket(socket: Duplex, message: string, log: FastifyBaseLogger): void {
+function rejectSocket(
+  socket: Duplex,
+  message: string,
+  log: FastifyBaseLogger,
+  metrics: GatewayMetrics,
+): void {
   // The peer may already be gone (e.g. a reset during parsing).
   if (!socket.writable) return;
+  metrics.requestCompleted({
+    routeId: undefined,
+    statusCode: 400,
+    code: 'BAD_REQUEST',
+    durationSeconds: 0,
+  });
   const requestId = newRequestId();
   const body = JSON.stringify(
     new GatewayError('BAD_REQUEST', { publicMessage: message }).toBody(requestId),
@@ -153,7 +201,11 @@ function buildPublicServer(
   upstreams: UpstreamRegistry,
   limiter: RateLimiter,
   breakers: CircuitBreakerRegistry,
+  cache: MemoryResponseCache,
+  cacheNow: () => number,
+  metrics: GatewayMetrics,
 ) {
+  const limiterMode = config.rateLimit.mode;
   const authenticator =
     options.clients === undefined ? undefined : new ApiKeyAuthenticator(options.clients);
   const routes = new RouteRegistry(config.routes);
@@ -162,6 +214,9 @@ function buildPublicServer(
     limits: config.server.limits,
     breakers,
     ...(options.random === undefined ? {} : { random: options.random }),
+    onAttemptSettled: (upstreamId, attemptOutcome, seconds) => {
+      metrics.upstreamAttempt(upstreamId, attemptOutcome, seconds);
+    },
   });
   const outcomes = new WeakMap<FastifyRequest, RequestOutcome>();
 
@@ -170,7 +225,7 @@ function buildPublicServer(
     // Malformed HTTP that Node's parser rejects never reaches a route; answer in the normalized shape
     // (ADR-0011) instead of Fastify's default body.
     clientErrorHandler: (error, socket) => {
-      rejectSocket(socket, 'Malformed HTTP request', app.log);
+      rejectSocket(socket, 'Malformed HTTP request', app.log, metrics);
       app.log.debug({ err: error }, 'HTTP parser rejected request');
     },
     frameworkErrors: (error, request, reply) => {
@@ -187,10 +242,10 @@ function buildPublicServer(
   });
 
   app.server.on('upgrade', (_request, socket: Duplex) => {
-    rejectSocket(socket, 'Protocol upgrade not supported', app.log);
+    rejectSocket(socket, 'Protocol upgrade not supported', app.log, metrics);
   });
   app.server.on('connect', (_request, socket: Duplex) => {
-    rejectSocket(socket, 'CONNECT not supported', app.log);
+    rejectSocket(socket, 'CONNECT not supported', app.log, metrics);
   });
 
   const handle = async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> => {
@@ -231,6 +286,7 @@ function buildPublicServer(
       } catch (error) {
         if (!(error instanceof RateLimiterUnavailableError)) throw error;
         // Fail-closed: the shared limiter can't decide (ADR-0034).
+        metrics.rateLimiterUnavailable(match.route.id);
         void reply.header('retry-after', '1');
         throw new GatewayError('RATE_LIMITER_UNAVAILABLE', { cause: error });
       }
@@ -244,6 +300,11 @@ function buildPublicServer(
         rateHeaders['x-ratelimit-mode'] = 'degraded';
         outcome.rateLimitMode = 'degraded';
       }
+      metrics.rateLimitDecision(
+        match.route.id,
+        decision.allowed,
+        decision.degraded === true ? 'degraded' : limiterMode,
+      );
       void reply.headers(rateHeaders);
       if (!decision.allowed) {
         void reply.header(
@@ -251,6 +312,79 @@ function buildPublicServer(
           String(Math.max(1, Math.ceil(decision.retryAfterMs / 1000))),
         );
         throw new GatewayError('RATE_LIMIT_EXCEEDED');
+      }
+
+      // Response cache, after auth and rate limiting, before the breaker (ADR-0010, ADR-0036).
+      const routeCache = match.route.cache.enabled ? match.route.cache : undefined;
+      let capture: BodyCapture | undefined;
+      if (routeCache !== undefined) {
+        const method = request.raw.method ?? 'GET';
+        const bypass = requestBypassReason(
+          method,
+          request.headers,
+          match.route.forwarding.authorization,
+        );
+        if (bypass === undefined) {
+          const key = cacheKey({
+            routeId: match.route.id,
+            method,
+            rawPath: target.rawPath,
+            rawQuery: target.rawQuery,
+            partition: cachePartition(routeCache, identity?.clientId),
+            varyHeaders: routeCache.varyHeaders,
+            requestHeaders: request.headers,
+          });
+          const hit = await cache.get(key);
+          if (hit !== undefined) {
+            outcome.cacheStatus = 'hit';
+            metrics.cacheLookup(match.route.id, 'hit');
+            return await reply
+              .code(hit.statusCode)
+              .headers(hit.headers)
+              .headers(rateHeaders)
+              .header('x-cache', 'HIT')
+              .header('age', String(Math.max(0, Math.floor((cacheNow() - hit.storedAtMs) / 1000))))
+              .header('x-request-id', request.id)
+              .send(hit.body);
+          }
+          outcome.cacheStatus = 'miss';
+          metrics.cacheLookup(match.route.id, 'miss');
+          const routeId = match.route.id;
+          capture = {
+            begin: (statusCode, headers) => {
+              const verdict = storability(statusCode, normalizeHeaders(headers), routeCache);
+              if (!verdict.storable) {
+                outcome.cacheStore = 'not_storable';
+                metrics.cacheStore(routeId, 'not_storable');
+                return undefined;
+              }
+              return {
+                maxBytes: routeCache.maxResponseBytes,
+                complete: (body) => {
+                  const storedAtMs = cacheNow();
+                  outcome.cacheStore = 'stored';
+                  metrics.cacheStore(routeId, 'stored');
+                  void cache.set(key, {
+                    statusCode,
+                    headers: cacheableHeaders(headers),
+                    body,
+                    storedAtMs,
+                    expiresAtMs: storedAtMs + verdict.ttlMs,
+                  });
+                },
+                tooLarge: () => {
+                  outcome.cacheStore = 'too_large';
+                  metrics.cacheStore(routeId, 'too_large');
+                },
+              };
+            },
+          };
+        } else {
+          outcome.cacheStatus = 'bypass';
+          metrics.cacheLookup(match.route.id, 'bypass');
+        }
+        rateHeaders['x-cache'] = outcome.cacheStatus === 'miss' ? 'MISS' : 'BYPASS';
+        void reply.header('x-cache', rateHeaders['x-cache']);
       }
 
       const result = await proxy.forward({
@@ -266,6 +400,7 @@ function buildPublicServer(
         onAttempt: () => {
           outcome.attempts = (outcome.attempts ?? 0) + 1;
         },
+        ...(capture === undefined ? {} : { capture }),
         onBodyError: (error) => {
           const code = isGatewayError(error) ? error.code : 'UPSTREAM_UNAVAILABLE';
           outcome.errorCode = code;
@@ -315,8 +450,37 @@ function buildPublicServer(
   app.all('/*', handle);
   app.setNotFoundHandler(handle);
 
+  // In-flight gauge; 'close' fires even when the client aborts, unlike onResponse.
+  app.addHook('onRequest', (request, reply, done) => {
+    const end = metrics.requestStarted();
+    reply.raw.once('close', () => {
+      end();
+      const outcome = outcomes.get(request);
+      if (!reply.raw.writableFinished && outcome?.metricsRecorded !== true) {
+        if (outcome !== undefined) outcome.metricsRecorded = true;
+        metrics.requestCompleted({
+          routeId: outcome?.routeId,
+          statusCode: reply.statusCode,
+          code: 'CLIENT_ABORTED',
+          durationSeconds: reply.elapsedTime / 1000,
+        });
+      }
+    });
+    done();
+  });
+
   app.addHook('onResponse', (request, reply, done) => {
     const outcome = outcomes.get(request);
+    if (outcome?.metricsRecorded !== true) {
+      if (outcome !== undefined) outcome.metricsRecorded = true;
+      metrics.requestCompleted({
+        routeId: outcome?.routeId,
+        statusCode: reply.statusCode,
+        code: outcome?.errorCode,
+        durationSeconds: reply.elapsedTime / 1000,
+      });
+      metrics.retries(outcome?.routeId, (outcome?.attempts ?? 1) - 1);
+    }
     const queryStart = (request.raw.url ?? '').indexOf('?');
     request.log.info(
       {
@@ -330,6 +494,8 @@ function buildPublicServer(
         authFailure: outcome?.authFailure,
         attempts: outcome?.attempts,
         rateLimitMode: outcome?.rateLimitMode,
+        cacheStatus: outcome?.cacheStatus,
+        cacheStore: outcome?.cacheStore,
       },
       'request completed',
     );
@@ -344,10 +510,18 @@ interface Readiness {
   body: Record<string, string>;
 }
 
-function buildOperationsServer(options: GatewayOptions, readiness: () => Promise<Readiness>) {
+function buildOperationsServer(
+  options: GatewayOptions,
+  readiness: () => Promise<Readiness>,
+  metrics: GatewayMetrics,
+) {
   const app = fastify(baseOptions(options));
   // Liveness only: healthy whenever the process can answer, regardless of dependencies (ADR-0030).
   app.get('/health', () => ({ status: 'ok' }));
+  // Prometheus scrape endpoint (ADR-0022, ADR-0036): bounded labels only.
+  app.get('/metrics', async (_request, reply) =>
+    reply.type(metrics.contentType).send(await metrics.text()),
+  );
   app.get('/ready', async (_request, reply) => {
     const { ready, body } = await readiness();
     return reply.code(ready ? 200 : 503).send(body);
@@ -458,13 +632,39 @@ export function createGateway(config: GatewayConfig, options: GatewayOptions = {
     new LocalTokenBucketLimiter({ maxBuckets: config.rateLimit.maxBuckets });
   const upstreams = new UpstreamRegistry(config.upstreams);
   let ready = false;
+  const cacheRef: { current?: MemoryResponseCache } = {};
+  const metrics = new GatewayMetrics({
+    routes: config.routes.map((route) => route.id),
+    upstreams: config.upstreams.map((upstream) => upstream.id),
+    cacheStats: () => cacheRef.current?.stats() ?? { entries: 0, bytes: 0 },
+    defaultMetrics: options.processMetrics ?? true,
+  });
   const breakers = new CircuitBreakerRegistry(config.upstreams, {
     ...(options.breakerClock === undefined ? {} : { now: options.breakerClock }),
     onTransition: (upstreamId, transition) => {
+      metrics.breakerTransition(upstreamId, transition.from, transition.to);
       logRef.current?.warn({ upstreamId, ...transition }, 'circuit breaker state changed');
     },
   });
-  const publicServer = buildPublicServer(config, options, upstreams, limiter, breakers);
+  const cacheNow = options.cacheClock ?? Date.now;
+  const cache = new MemoryResponseCache({
+    ...config.responseCache,
+    now: cacheNow,
+    onEvict: (reason) => {
+      metrics.cacheEviction(reason);
+    },
+  });
+  cacheRef.current = cache;
+  const publicServer = buildPublicServer(
+    config,
+    options,
+    upstreams,
+    limiter,
+    breakers,
+    cache,
+    cacheNow,
+    metrics,
+  );
   logRef.current = publicServer.log;
 
   let lastLruEvictions = 0;
@@ -475,24 +675,20 @@ export function createGateway(config: GatewayConfig, options: GatewayOptions = {
       : limiter instanceof ResilientRateLimiter
         ? limiter.fallback
         : undefined;
-  const sweeper =
-    localBuckets !== undefined
-      ? setInterval(() => {
-          localBuckets.sweep();
-          const { evictedLru, buckets, maxBuckets } = localBuckets.stats();
-          if (evictedLru > lastLruEvictions) {
-            publicServer.log.warn(
-              {
-                evicted: evictedLru - lastLruEvictions,
-                buckets,
-                maxBuckets,
-              },
-              'rate-limit bucket cap reached; least-recently-used buckets were evicted',
-            );
-            lastLruEvictions = evictedLru;
-          }
-        }, options.sweepIntervalMs ?? SWEEP_INTERVAL_MS).unref()
-      : undefined;
+  // Periodic maintenance: expired cache entries, full local buckets (ADR-0032, ADR-0036).
+  const sweeper = setInterval(() => {
+    cache.sweep();
+    if (localBuckets === undefined) return;
+    localBuckets.sweep();
+    const { evictedLru, buckets, maxBuckets } = localBuckets.stats();
+    if (evictedLru > lastLruEvictions) {
+      publicServer.log.warn(
+        { evicted: evictedLru - lastLruEvictions, buckets, maxBuckets },
+        'rate-limit bucket cap reached; least-recently-used buckets were evicted',
+      );
+      lastLruEvictions = evictedLru;
+    }
+  }, options.sweepIntervalMs ?? SWEEP_INTERVAL_MS).unref();
   // Readiness (ADR-0030, ADR-0034 review): actively ping Redis on each probe (bounded by commandTimeoutMs,
   // one ping in flight at a time), so a drained instance notices recovery without traffic.
   const pingRedis = singleFlight(async () => {
@@ -515,7 +711,7 @@ export function createGateway(config: GatewayConfig, options: GatewayOptions = {
       ? { ready: false, body: { status: 'not_ready', redis: 'unavailable' } }
       : { ready: true, body: { status: 'ready', redis: 'unavailable', rateLimit: 'degraded' } };
   };
-  const operations = buildOperationsServer(options, readiness);
+  const operations = buildOperationsServer(options, readiness, metrics);
   let closing: Promise<ShutdownResult> | undefined;
 
   async function shutdown(): Promise<ShutdownResult> {
@@ -550,6 +746,7 @@ export function createGateway(config: GatewayConfig, options: GatewayOptions = {
   return {
     public: publicServer,
     operations,
+    metrics,
     async start() {
       if (redisParts !== undefined) await waitForRedis(redisParts, config);
       await operations.listen({ host: config.operations.host, port: config.operations.port });

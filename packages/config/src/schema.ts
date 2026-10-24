@@ -240,6 +240,24 @@ const cacheSchema = z
     enabled: z.boolean().default(false),
     ttlSeconds: z.int().min(1).max(86_400).optional(),
     maxResponseBytes: positiveInt.default(262_144),
+    /** "client" partitions entries by API client on auth routes; "shared" opts into one entry for all (ADR-0035). */
+    scope: z.enum(['client', 'shared']).default('client'),
+    /** Request headers that partition entries and may appear in a response's Vary (ADR-0036). */
+    varyHeaders: z
+      .array(
+        z
+          .string()
+          .regex(/^[A-Za-z0-9-]+$/, 'must be a header name')
+          .transform((name) => name.toLowerCase())
+          .refine(
+            (name) =>
+              !['authorization', 'proxy-authorization', 'cookie', 'x-api-key'].includes(name),
+            'must not be a credential header: its values would end up in cache keys (ADR-0036)',
+          ),
+      )
+      .max(10)
+      .refine(hasNoDuplicates, 'must not contain duplicates')
+      .default(() => []),
   })
   .transform((cache, ctx) => {
     if (!cache.enabled) return { enabled: false as const };
@@ -255,6 +273,8 @@ const cacheSchema = z
       enabled: true as const,
       ttlSeconds: cache.ttlSeconds,
       maxResponseBytes: cache.maxResponseBytes,
+      scope: cache.scope,
+      varyHeaders: cache.varyHeaders,
     };
   })
   .prefault({});
@@ -295,6 +315,13 @@ const baseConfigSchema = z.strictObject({
   admin: listener({ host: '127.0.0.1', port: 9090 }),
   operations: listener({ host: '127.0.0.1', port: 9091 }),
   rateLimit: rateLimitSchema,
+  /** Global bounds for the per-instance response cache (ADR-0036). */
+  responseCache: z
+    .strictObject({
+      maxEntries: positiveInt.max(10_000_000).default(10_000),
+      maxBytes: positiveInt.default(67_108_864),
+    })
+    .prefault({}),
   circuitBreaker: circuitBreakerSchema,
   upstreams: z.array(upstreamSchema).min(1, 'must define at least one upstream'),
   routes: z.array(routeSchema).min(1, 'must define at least one route'),

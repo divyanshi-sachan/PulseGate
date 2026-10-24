@@ -40,13 +40,19 @@ importers:
         version: 8.72.0(eslint@10.13.0)(typescript@6.0.3)
       vitest:
         specifier: 5.0.5
-        version: 5.0.5(@types/node@26.6.5)(vite@8.3.5(@types/node@26.6.5)(yaml@2.9.1))
+        version: 5.0.5(@opentelemetry/api@1.10.0)(@types/node@26.6.5)(vite@8.3.5(@types/node@26.6.5)(yaml@2.9.1))
 
   apps/gateway:
     dependencies:
+      '@pulsegate/cache':
+        specifier: workspace:*
+        version: link:../../packages/cache
       '@pulsegate/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@pulsegate/observability':
+        specifier: workspace:*
+        version: link:../../packages/observability
       '@pulsegate/rate-limiter':
         specifier: workspace:*
         version: link:../../packages/rate-limiter
@@ -72,6 +78,8 @@ importers:
 
   examples/mock-upstreams: {}
 
+  packages/cache: {}
+
   packages/config:
     dependencies:
       yaml:
@@ -80,6 +88,15 @@ importers:
       zod:
         specifier: 4.6.7
         version: 4.6.7
+
+  packages/observability:
+    dependencies:
+      '@pulsegate/shared':
+        specifier: workspace:*
+        version: link:../shared
+      prom-client:
+        specifier: 15.1.3
+        version: 15.1.3
 
   packages/rate-limiter:
     dependencies:
@@ -233,6 +250,10 @@ packages:
 
   '@kwsites/file-exists@1.1.1':
     resolution: {integrity: sha512-m9/5YGR18lIwxSFDwfE3oA7bWuq9kdau6ugN4H2rJeyhFQZcG9AgSHkQtSD15a8WvTgfz9aikZMrKPHvbpqFiw==}
+
+  '@opentelemetry/api@1.10.0':
+    resolution: {integrity: sha512-lMkyes8iHrG+mk6WH7X70MdCLI2RS0FwNBY1PyQ8UemaijE2m5mv5A0Niy3HtbYTFrgkUEQjFMXmSAk2hQDuPQ==}
+    engines: {node: '>=8.0.0'}
 
   '@oxc-project/types@0.155.0':
     resolution: {integrity: sha512-SeE8JPwW1xs1tHeNycjUtUBdhorRa8o4jlvjwk49R7/Z291i+4DQa7JJIgOm/TaYQZx+QrPQbVJ/9c8dMIZN8Q==}
@@ -614,6 +635,9 @@ packages:
 
   bcrypt-pbkdf@1.0.2:
     resolution: {integrity: sha512-qeFIXtP4MSoi6NLqO12WfqARWWuCKi2Rn/9hJLEmtB5yTNr9DqFWkJRCf2qShWzPeAMRnOgCrq0sg/KLv5ES9w==}
+
+  bintrees@1.0.2:
+    resolution: {integrity: sha512-VOMgTMwjAaUG580SXn3LacVgjurrbMme7ZZNYGSSV7mmtY6QQRh0Eg3pwIcntQ77DErK1L0NxkbetjcoXzVwKw==}
 
   bl@4.1.0:
     resolution: {integrity: sha512-1W07cM9gS6DcLperZfFSj+bWLtaPGSOHWhPiGzXmvVJbRLdG82sH/Kn8EtW1VqWVA54AKf2h5k5BbnIbwF3h6w==}
@@ -1216,6 +1240,11 @@ packages:
     resolution: {integrity: sha512-cdGef/drWFoydD1JsMzuFf8100nZl+GT+yacc2bEced5f9Rjk4z+WtFUTBu9PhOi9j/jfmBPu0mMEY4wIdAF8A==}
     engines: {node: '>= 0.6.0'}
 
+  prom-client@15.1.3:
+    resolution: {integrity: sha512-6ZiOBfCywsD4k1BN9IX0uZhF+tJkV8q8llP64G5Hajs4JOeVLPCwpPVcpXy3BwYiUGgyJzsJJQeOIv7+hDSq8g==}
+    engines: {node: ^16 || ^18 || >=20}
+    deprecated: prom-client has been replaced by @prometheus-io/client
+
   proper-lockfile@4.1.2:
     resolution: {integrity: sha512-TjNPblN4BwAWMXU8s9AEz4JmQxnD1NNL7bNOY/AKUzyamc379FWASUhc/K1pL2noVb+XmZKLL68cjzLsiOAMaA==}
 
@@ -1397,6 +1426,9 @@ packages:
 
   tar-stream@3.2.2:
     resolution: {integrity: sha512-+8NeqHRjQWH9nYlwo2gamAMImZCVzI4UoEgDpWorBt9OEfppiZn+uSkskzQKPWIZyji/C8fpWO7u69G0DX0tbg==}
+
+  tdigest@0.1.3:
+    resolution: {integrity: sha512-zbRt+lT+/H4fRItHshczHErVCQnitJk8MfMT24MqFJf3YL7SJJPqGIGeuOdvxXxM/AHFzKBl7WoyaYwqO9s3Kw==}
 
   teex@1.0.1:
     resolution: {integrity: sha512-eYE6iEI62Ni1H8oIa7KlDU6uQBtqr4Eajni3wX7rpfXD8ysFx8z0+dri+KWEPWpBsxXfxu58x/0jvTVT1ekOSg==}
@@ -1756,6 +1788,8 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
+  '@opentelemetry/api@1.10.0': {}
+
   '@oxc-project/types@0.155.0': {}
 
   '@pinojs/redact@0.4.0': {}
@@ -2107,6 +2141,8 @@ snapshots:
   bcrypt-pbkdf@1.0.2:
     dependencies:
       tweetnacl: 0.14.5
+
+  bintrees@1.0.2: {}
 
   bl@4.1.0:
     dependencies:
@@ -2690,6 +2726,11 @@ snapshots:
 
   process@0.11.10: {}
 
+  prom-client@15.1.3:
+    dependencies:
+      '@opentelemetry/api': 1.10.0
+      tdigest: 0.1.3
+
   proper-lockfile@4.1.2:
     dependencies:
       graceful-fs: 4.2.11
@@ -2925,6 +2966,10 @@ snapshots:
       - bare-buffer
       - react-native-b4a
 
+  tdigest@0.1.3:
+    dependencies:
+      bintrees: 1.0.2
+
   teex@1.0.1:
     dependencies:
       streamx: 2.28.1
@@ -3025,7 +3070,7 @@ snapshots:
       fsevents: 2.3.3
       yaml: 2.9.1
 
-  vitest@5.0.5(@types/node@26.6.5)(vite@8.3.5(@types/node@26.6.5)(yaml@2.9.1)):
+  vitest@5.0.5(@opentelemetry/api@1.10.0)(@types/node@26.6.5)(vite@8.3.5(@types/node@26.6.5)(yaml@2.9.1)):
     dependencies:
       '@types/chai': 5.2.3
       '@vitest/mocker': 5.0.5(vite@8.3.5(@types/node@26.6.5)(yaml@2.9.1))
@@ -3042,6 +3087,7 @@ snapshots:
       vite: 8.3.5(@types/node@26.6.5)(yaml@2.9.1)
       why-is-node-running: 3.2.1
     optionalDependencies:
+      '@opentelemetry/api': 1.10.0
       '@types/node': 26.6.5
     transitivePeerDependencies:
       - msw

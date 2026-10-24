@@ -20,7 +20,9 @@
     "start": "node dist/main.js"
   },
   "dependencies": {
+    "@pulsegate/cache": "workspace:*",
     "@pulsegate/config": "workspace:*",
+    "@pulsegate/observability": "workspace:*",
     "@pulsegate/rate-limiter": "workspace:*",
     "@pulsegate/reliability": "workspace:*",
     "@pulsegate/shared": "workspace:*",

@@ -24,6 +24,12 @@ export interface ProxyServiceOptions {
   breakers: CircuitBreakerRegistry;
   /** Jitter source for backoff; injectable for tests (default Math.random). */
   random?: () => number;
+  /** Called once per upstream attempt when its breaker permit settles (ADR-0036 metrics). */
+  onAttemptSettled?: (
+    upstreamId: string,
+    outcome: 'success' | 'failure' | 'aborted',
+    seconds: number,
+  ) => void;
 }
 
 export interface ForwardRequest {
@@ -41,6 +47,21 @@ export interface ForwardRequest {
   onBodyError: (error: unknown) => void;
   /** Called once per upstream attempt (for the request log's `attempts`). */
   onAttempt?: () => void;
+  /** Optional tee of the final response body, e.g. for the response cache (ADR-0036). */
+  capture?: BodyCapture;
+}
+
+/** Decides per final response whether to collect a copy of its body while it streams to the client. */
+export interface BodyCapture {
+  begin(statusCode: number, headers: OutgoingHttpHeaders): CaptureSink | undefined;
+}
+
+export interface CaptureSink {
+  maxBytes: number;
+  /** The full body arrived cleanly within maxBytes. */
+  complete(body: Buffer): void;
+  /** The body exceeded maxBytes; nothing is kept. */
+  tooLarge(): void;
 }
 
 export interface ProxyResponse {
@@ -111,11 +132,44 @@ export class ProxyService {
   readonly #limits: ProxyLimits;
   readonly #breakers: CircuitBreakerRegistry;
   readonly #random: () => number;
+  readonly #onAttemptSettled: ProxyServiceOptions['onAttemptSettled'];
 
   constructor(options: ProxyServiceOptions) {
     this.#limits = options.limits;
     this.#breakers = options.breakers;
     this.#random = options.random ?? Math.random;
+    this.#onAttemptSettled = options.onAttemptSettled;
+  }
+
+  /** Reports the attempt's outcome and duration when its permit settles (exactly once). */
+  #observed(permit: BreakerPermit, upstreamId: string): BreakerPermit {
+    const report = this.#onAttemptSettled;
+    if (report === undefined) return permit;
+    const started = performance.now();
+    let reported = false;
+    const settle = (outcome: 'success' | 'failure' | 'aborted', apply: () => void) => {
+      apply();
+      if (reported) return;
+      reported = true;
+      report(upstreamId, outcome, (performance.now() - started) / 1000);
+    };
+    return {
+      success: () => {
+        settle('success', () => {
+          permit.success();
+        });
+      },
+      failure: () => {
+        settle('failure', () => {
+          permit.failure();
+        });
+      },
+      release: () => {
+        settle('aborted', () => {
+          permit.release();
+        });
+      },
+    };
   }
 
   async forward(input: ForwardRequest): Promise<ProxyResponse> {
@@ -147,7 +201,7 @@ export class ProxyService {
       body?.destroy();
       throw new CircuitOpenError(first.retryAfterMs);
     }
-    let permit: BreakerPermit = first.permit;
+    let permit: BreakerPermit = this.#observed(first.permit, upstream.config.id);
 
     for (let attempt = 1; ; attempt++) {
       input.onAttempt?.();
@@ -165,7 +219,7 @@ export class ProxyService {
           input.clientSignal,
         );
         if (next === undefined) throw result.error;
-        permit = next;
+        permit = this.#observed(next, upstream.config.id);
         continue;
       }
 
@@ -199,7 +253,7 @@ export class ProxyService {
         // Destroyed rather than drained: a retryable error body may be large, and reading it only
         // to keep one connection alive isn't worth it. Undici opens a new connection as needed.
         discard(response);
-        permit = next;
+        permit = this.#observed(next, upstream.config.id);
         continue;
       }
 
@@ -331,7 +385,29 @@ export class ProxyService {
       maxResponseBodyBytes,
       () => new GatewayError('UPSTREAM_RESPONSE_TOO_LARGE'),
     );
-    const body = pipeline(response.body, limited, (error) => {
+    const headers = filterResponseHeaders(response.headers);
+    const sink = input.capture?.begin(response.statusCode, headers);
+    const collected: Buffer[] = [];
+    let collectedBytes = 0;
+    let overflow =
+      sink !== undefined && responseLength !== undefined && responseLength > sink.maxBytes;
+    // Reported as soon as it is known, so the request log line can include it.
+    if (overflow) sink?.tooLarge();
+    // Copies chunks up to the sink's limit while passing every chunk through unchanged.
+    const tee = new Transform({
+      transform(chunk: Buffer, _encoding, callback) {
+        if (sink !== undefined && !overflow) {
+          collectedBytes += chunk.length;
+          if (collectedBytes > sink.maxBytes) {
+            overflow = true;
+            collected.length = 0;
+            sink.tooLarge();
+          } else collected.push(chunk);
+        }
+        callback(null, chunk);
+      },
+    });
+    const body = pipeline(response.body, limited, tee, (error) => {
       // On success Node passes `undefined` here, although @types/node declares `Error | null`.
       if (input.clientSignal.aborted) {
         permit?.release();
@@ -343,12 +419,9 @@ export class ProxyService {
         return;
       }
       permit?.success();
+      if (sink !== undefined && !overflow) sink.complete(Buffer.concat(collected));
     });
 
-    return {
-      statusCode: response.statusCode,
-      headers: filterResponseHeaders(response.headers),
-      body,
-    };
+    return { statusCode: response.statusCode, headers, body };
   }
 }

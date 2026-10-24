@@ -187,3 +187,14 @@ Format: date · goal · what changed · decisions (ADR links) · open threads.
   `scripts/mutation-check.ts` (16 mutations, baseline-checked), `scripts/smoke-distributed.sh`, `.github/workflows/ci.yml`; CLAUDE.md rule.
 - **Found:** a malformed `REDIS_URL` would have leaked the password through Node's URL TypeError `input` property; fixed and tested.
 - **Verified:** 253 tests with Redis required; all 16 mutations killed (37 s); smoke 30/70 across two instances. CI not yet run on GitHub.
+
+## 2026-10-24 · Phase 5: response cache + Prometheus metrics
+- **Decisions:** ADR-0035 (user); implementation rules in [ADR-0036](../adr/0036-response-cache-and-metrics.md) (Claude-chosen, to review):
+  GET + 200 only, no Set-Cookie/private/no-store/no-cache, Vary only on configured headers, TTL min(route, s-maxage/max-age),
+  global 10k entries / 64 MiB LRU, X-Cache + Age, metric families and bounded labels.
+- **Changed:** new `packages/cache`, `packages/observability` (prom-client 15.1.3); config `cache.scope`, `cache.varyHeaders`,
+  `responseCache`; ProxyService body tee + attempt-settled hook; gateway cache lookup/store, metrics hooks, `/metrics`;
+  5 new mutation entries; Dockerfile manifests; example config, README, CLAUDE.md, ADR-0026.
+- **Verified:** 294 tests (Redis required), 21/21 mutations, Docker cache + metrics, GitHub CI green on 55428b1 (check 111 s, docker 42 s).
+- **Fixed along the way:** a sloppy first draft of the breaker+cache test (placeholder upstream) rewritten before running; `too_large`
+  reported eagerly so it reaches the log; label test now excludes Node runtime metrics (GC `kind` label).

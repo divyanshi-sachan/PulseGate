@@ -20,6 +20,10 @@ operations: # /health, /ready, /metrics, always on (ADR-0022)
   host: '127.0.0.1' # default
   port: 9091 # default
 
+responseCache: # per-instance response cache bounds (ADR-0036)
+  maxEntries: 10000 # default
+  maxBytes: 67108864 # default 64 MiB; least-recently-used entries are evicted beyond either bound
+
 rateLimit:
   mode: 'local' # default; "redis" also requires redisFailurePolicy: "open" | "closed" (ADR-0005)
   maxBuckets: 100000 # default; local mode evicts least-recently-used buckets beyond this (ADR-0032)
@@ -62,6 +66,8 @@ routes:
       enabled: true # default false
       ttlSeconds: 30 # required when enabled
       maxResponseBytes: 262144 # default
+      scope: 'client' # default; per API client on auth routes, 'shared' for public data (ADR-0035)
+      varyHeaders: [] # default; request headers that partition entries (never credential headers)
     forwarding: # ADR-0021
       authorization: false # default; forward the client's Authorization header
       forwardedHost: false # default; add X-Forwarded-Host

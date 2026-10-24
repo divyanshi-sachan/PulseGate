@@ -3,8 +3,8 @@
 A lightweight, self-hostable API gateway focused on reliability: routing, API-key auth, rate limiting,
 caching, timeouts, bounded retries and circuit breakers, with observable, explainable behavior.
 
-**Status:** Phases 1–4 complete (proxy, API-key auth, local and Redis-backed distributed rate limiting, bounded
-retries, per-upstream circuit breakers). Caching and metrics are next. See [docs/context/STATE.md](docs/context/STATE.md) for the current state and [docs/adr/](docs/adr/README.md)
+**Status:** Phases 1–4 complete, plus the Phase 5 response cache and Prometheus `/metrics` (proxy, API-key auth,
+local and Redis-backed rate limiting, bounded retries, circuit breakers). The dashboard is next. See [docs/context/STATE.md](docs/context/STATE.md) for the current state and [docs/adr/](docs/adr/README.md)
 for the design decisions.
 
 ## Quickstart (Docker)
@@ -22,6 +22,9 @@ curl -i http://localhost:8080/api/orders/1 -H "x-api-key: $KEY"   # 200, X-RateL
 curl -i http://localhost:8080/api/orders/1                        # 401 AUTHENTICATION_FAILED
 curl -i http://localhost:8080/api/payments/7                      # 200, limited per IP
 ```
+
+Repeat the first request: `X-Cache: MISS` then `HIT` (cached per API client for 30 s). Metrics are on the
+operations listener inside the container: `docker compose exec gateway node -e "fetch('http://127.0.0.1:9091/metrics').then(r=>r.text()).then(console.log)"`.
 
 The mock upstreams echo what they received, so you can see what the gateway forwards (no `X-API-Key`).
 Faults can be injected through the gateway with query parameters:
@@ -68,6 +71,8 @@ Configuration is validated at startup; every option and default is documented in
 |---|---|
 | `apps/gateway` | Fastify gateway: public and operations listeners, routing, proxy |
 | `packages/config` | Zod config schema and loader |
+| `packages/cache` | Bounded response cache and cacheability rules |
+| `packages/observability` | Prometheus metrics with bounded labels |
 | `packages/rate-limiter` | Token-bucket `RateLimiter` and in-memory implementation |
 | `packages/reliability` | Circuit breakers and retry policy |
 | `packages/testing` | Test-only helpers: real Redis (Testcontainers), fault-injecting TCP proxy |
