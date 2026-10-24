@@ -13,5 +13,5 @@
     "scripts/**/*.ts",
     "*.config.ts"
   ],
-  "exclude": ["apps/dashboard"]
+  "exclude": ["apps/dashboard", "tests/e2e"]
 }

@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # Multi-stage build for the PulseGate monorepo (ADR-0029).
-# Targets: "gateway" and "mock-upstreams". Build with e.g. `docker build --target gateway .`
+# Targets: "gateway" (including the dashboard's static files) and "mock-upstreams". Build with e.g. `docker build --target gateway .`
 
 ARG NODE_VERSION=26.4.0
 
@@ -33,14 +33,23 @@ RUN pnpm build
 # Standalone production bundles: dist + prod node_modules (workspace deps copied as dist only).
 RUN pnpm --filter @pulsegate/gateway deploy --prod --legacy /out/gateway \
  && pnpm --filter @pulsegate/mock-upstreams deploy --prod --legacy /out/mock-upstreams
+# Dashboard files the gateway serves: no source maps or build manifest in the runtime image (ADR-0043).
+RUN cp -r apps/dashboard/dist /out/ui \
+ && rm -rf /out/ui/.vite \
+ && find /out/ui -name '*.map' -delete
 
 FROM node:${NODE_VERSION}-slim AS gateway
 ENV NODE_ENV=production
+# The dashboard's static build, served at /admin/ui/ when ADMIN_TOKEN is set (ADR-0040, ADR-0043).
+ENV PULSEGATE_ADMIN_UI_DIR=/app/ui
 WORKDIR /app
 COPY --from=build --chown=node:node /out/gateway ./
+# Root-owned and read-only for the node user: the gateway serves these files, never writes them.
+COPY --from=build /out/ui ./ui
 USER node
-# 8080 public listener; 9091 operations listener (bound to 127.0.0.1 by default, ADR-0022).
-EXPOSE 8080
+# 8080 public listener; 9090 admin listener (only with ADMIN_TOKEN, ADR-0020); 9091 operations listener
+# (bound to 127.0.0.1 by default, ADR-0022).
+EXPOSE 8080 9090
 CMD ["node", "dist/main.js"]
 
 FROM node:${NODE_VERSION}-slim AS mock-upstreams

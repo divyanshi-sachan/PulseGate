@@ -293,3 +293,14 @@ Format: date · goal · what changed · decisions (ADR links) · open threads.
 - **Measured:** initial 94.6 KB / 120, total 203.9 KB / 260 gz; Recharts kept (uPlot fallback not needed). Real-browser
   run with plan §7's traffic: 40 % rejections, 80 % hits, faulty breaker Open; no CSP violations.
 - **Next:** step 6, Docker/Compose dashboard, Playwright e2e, CI jobs, Docker verification, docs.
+
+## 2026-10-24 · Dashboard step 6: Docker, Playwright, CI (Phase 5 complete)
+- **Changed:** the gateway image ships the dashboard (`/app/ui`, root-owned, maps stripped; +0.21 MB); `pnpm dev:dashboard`
+  (127.0.0.1:9090, local-only token); e2e Compose override + `config/routes.e2e.yaml`; `scripts/e2e.sh` (fresh stack,
+  cross-container 401/200 check, UI CSP check, Playwright, always torn down); Playwright 1.64.1 suite (4 tests, exact
+  numbers, no CSP violations); CI `e2e` job with artifacts; e2e tsconfig; loader tests for both configs; README dashboard
+  section; 1 mutation (68 total); ADR-0043.
+- **Found:** Zod 4's `new Function` probe triggers a CSP `script-src` violation in the browser; fixed with jitless mode in a
+  first-imported module (guard test + mutation), CSP unchanged.
+- **Unverified:** the CI `e2e` job runs on the next push.
+- **Next:** Phase 6, release and benchmarks.

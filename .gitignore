@@ -12,3 +12,6 @@ benchmarks/reports/raw/
 # Local config copies (copy from the *.example.yaml files)
 config/routes.yaml
 config/clients.yaml
+# Playwright output (traces and screenshots are CI artifacts on failure)
+playwright-report/
+test-results/

@@ -580,6 +580,14 @@ const MUTATIONS: Mutation[] = [
     tests: ['apps/dashboard'],
   },
   {
+    id: 'zod-not-jitless',
+    guards: 'ADR-0043: Zod must not probe eval, which the strict CSP reports as a violation',
+    file: 'apps/dashboard/src/zod-config.ts',
+    find: 'z.config({ jitless: true });',
+    replace: 'z.config({});',
+    tests: ['apps/dashboard/src/main.test.ts'],
+  },
+  {
     id: 'ready-despite-redis-down',
     guards: 'ADR-0034: fail-closed readiness reflects Redis',
     file: 'apps/gateway/src/app.ts',

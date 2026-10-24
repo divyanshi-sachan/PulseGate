@@ -1,0 +1,15 @@
+# Dashboard demo (ADR-0037, ADR-0043), on top of docker-compose.yml:
+#   pnpm dev:dashboard   (= docker compose -f docker-compose.yml -f docker-compose.dashboard.yml up --build)
+#   open http://127.0.0.1:9090/admin/ui/ and paste the token below
+# ADMIN_TOKEN defaults to a local-only value; set your own with ADMIN_TOKEN=... in the environment.
+
+services:
+  gateway:
+    environment:
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-pulsegate-local-dashboard-token-not-a-secret}
+    volumes:
+      - ./config/routes.dashboard.example.yaml:/config/routes.yaml:ro
+    ports:
+      # Host access is local only. Inside the Compose network the admin port is reachable by other containers,
+      # so the token is the real boundary (plan §5).
+      - '127.0.0.1:9090:9090'

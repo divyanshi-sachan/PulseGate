@@ -100,7 +100,9 @@ Unit tests sit next to code in `src/`; socket-level integration tests with mock 
 every API response with `@pulsegate/admin-contract`; tokens in `src/design/tokens.css`; strict CSP, so no inline
 scripts or styles; data shaping only in `src/data/`, colours only via CSS classes; polling via `usePoll`; ADR-0041, 0042).
 `examples/mock-upstreams` (dev/demo upstream with `_delay`/`_status`/`_reset`/`_bytes`/`_failRate` query faults).
-Docker: one multi-stage `Dockerfile` (targets `gateway`, `mock-upstreams`); Compose mounts `config/routes.example.yaml`.
+Docker: one multi-stage `Dockerfile` (targets `gateway` incl. the dashboard at `/app/ui`, `mock-upstreams`); Compose mounts
+`config/routes.example.yaml`; overrides `docker-compose.{distributed,dashboard,e2e}.yml` (ADR-0034, 0043). Dashboard code must
+import `./zod-config.ts` first in `main.tsx` (Zod jitless, strict CSP).
 When changing config: update schema, ADR-0026, the example YAML and the defaults test together.
 
 ## Coding conventions
@@ -139,6 +141,8 @@ pnpm test:mutations   # curated mutation suite: each re-introduced bug must fail
 pnpm bench:stats      # stats-window heap vs formula, one child process per config (also in CI)
 pnpm --filter @pulsegate/dashboard dev   # dashboard on Vite, proxying /admin/api to a gateway on :9090
 pnpm bundle:check     # after pnpm build: dashboard JS budget (initial ≤ 120 KB, total ≤ 260 KB gz) + no inline code (also in CI)
+pnpm dev:dashboard    # docker compose stack + admin listener on 127.0.0.1:9090 (local-only ADMIN_TOKEN, see README)
+pnpm test:e2e         # fresh Docker stack + cross-container admin check + Playwright, always torn down (also in CI)
 scripts/smoke-distributed.sh      # with dev:distributed running: exactly 30/100 pass across 2 instances
 ```
 

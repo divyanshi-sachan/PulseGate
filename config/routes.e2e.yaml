@@ -1,0 +1,46 @@
+# Playwright end-to-end stack (plan §7, ADR-0043): four routes, one job each, so every number on the dashboard
+# is known in advance. Not an example to copy; see routes.example.yaml for that.
+
+admin:
+  host: '0.0.0.0'
+  port: 9090
+
+upstreams:
+  - id: orders-service
+    baseUrl: 'http://orders-mock:4001'
+  # Its own upstream, so the breaker that opens here can't affect the other routes.
+  - id: faulty-service
+    baseUrl: 'http://payments-mock:4002'
+    circuitBreaker:
+      failureThreshold: 2
+      openDurationMs: 600000 # stays open for the whole run
+
+routes:
+  - id: e2e-ok
+    pathPrefix: '/e2e/ok'
+    methods: ['GET']
+    upstreamId: orders-service
+    auth: { required: false }
+    rateLimit: { capacity: 1000, refillRatePerSecond: 1000 }
+
+  - id: e2e-limited
+    pathPrefix: '/e2e/limited'
+    methods: ['GET']
+    upstreamId: orders-service
+    auth: { required: false }
+    rateLimit: { capacity: 3, refillRatePerSecond: 0.001 } # 3 pass, then nothing refills during the run
+
+  - id: e2e-cached
+    pathPrefix: '/e2e/cached'
+    methods: ['GET']
+    upstreamId: orders-service
+    auth: { required: false }
+    rateLimit: { capacity: 1000, refillRatePerSecond: 1000 }
+    cache: { enabled: true, ttlSeconds: 600, scope: 'shared' }
+
+  - id: e2e-faulty
+    pathPrefix: '/e2e/faulty'
+    methods: ['GET']
+    upstreamId: faulty-service
+    auth: { required: false }
+    rateLimit: { capacity: 1000, refillRatePerSecond: 1000 }

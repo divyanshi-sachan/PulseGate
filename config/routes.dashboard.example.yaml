@@ -1,0 +1,38 @@
+# Dashboard demo (ADR-0037, ADR-0043): the example config with the admin listener reachable from outside the
+# container. Used by docker-compose.dashboard.yml, which publishes it as 127.0.0.1:9090 only.
+# The admin token is the real boundary: other containers on the Compose network can reach port 9090.
+
+admin:
+  host: '0.0.0.0' # inside the container; the Compose override publishes it to 127.0.0.1 on the host
+  port: 9090
+
+upstreams:
+  - id: orders-service
+    baseUrl: 'http://orders-mock:4001'
+  - id: payments-service
+    baseUrl: 'http://payments-mock:4002'
+    circuitBreaker:
+      failureThreshold: 3
+
+routes:
+  - id: get-orders
+    pathPrefix: '/api/orders'
+    methods: ['GET']
+    upstreamId: orders-service
+    rateLimit: { capacity: 60, refillRatePerSecond: 1 }
+    retries: { maxAttempts: 2 }
+    cache: { enabled: true, ttlSeconds: 30 }
+
+  - id: create-orders
+    pathPrefix: '/api/orders'
+    methods: ['POST']
+    upstreamId: orders-service
+    rateLimit: { capacity: 20, refillRatePerSecond: 0.5 }
+
+  - id: get-payments
+    pathPrefix: '/api/payments'
+    methods: ['GET']
+    upstreamId: payments-service
+    auth: { required: false }
+    rateLimit: { capacity: 60, refillRatePerSecond: 1 }
+    retries: { maxAttempts: 2 }

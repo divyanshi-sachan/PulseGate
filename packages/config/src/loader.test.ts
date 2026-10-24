@@ -58,6 +58,38 @@ describe('loadConfigFile', () => {
     expect(config.rateLimit).toMatchObject({ mode: 'redis', redisFailurePolicy: 'closed' });
   });
 
+  it('loads the committed dashboard example config, with the admin listener open inside the container', async () => {
+    const config = await loadConfigFile(
+      fileURLToPath(new URL('../../../config/routes.dashboard.example.yaml', import.meta.url)),
+    );
+    expect(config.admin).toEqual({ host: '0.0.0.0', port: 9090 });
+    expect(config.routes.map((r) => r.id)).toEqual(['get-orders', 'create-orders', 'get-payments']);
+  });
+
+  it('loads the e2e config with the four single-purpose routes (plan §7)', async () => {
+    const config = await loadConfigFile(
+      fileURLToPath(new URL('../../../config/routes.e2e.yaml', import.meta.url)),
+    );
+    expect(config.routes.map((r) => r.id)).toEqual([
+      'e2e-ok',
+      'e2e-limited',
+      'e2e-cached',
+      'e2e-faulty',
+    ]);
+    expect(config.routes.find((r) => r.id === 'e2e-limited')?.rateLimit).toEqual({
+      capacity: 3,
+      refillRatePerSecond: 0.001,
+    });
+    expect(config.routes.find((r) => r.id === 'e2e-cached')?.cache).toMatchObject({
+      enabled: true,
+      ttlSeconds: 600,
+    });
+    expect(config.upstreams.find((u) => u.id === 'faulty-service')?.circuitBreaker).toMatchObject({
+      failureThreshold: 2,
+      openDurationMs: 600_000,
+    });
+  });
+
   it('loads YAML and JSON files', async () => {
     const yamlPath = join(dir, 'gateway.yml');
     const jsonPath = join(dir, 'gateway.json');

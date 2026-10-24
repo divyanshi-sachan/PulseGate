@@ -1,0 +1,10 @@
+# Playwright end-to-end stack (plan §7, ADR-0043), on top of docker-compose.yml + docker-compose.dashboard.yml.
+# Run through `pnpm test:e2e` (scripts/e2e.sh), which starts a fresh stack and always tears it down.
+
+services:
+  gateway:
+    environment:
+      ADMIN_TOKEN: pulsegate-e2e-admin-token-not-a-secret
+      LOG_LEVEL: warn
+    volumes:
+      - ./config/routes.e2e.yaml:/config/routes.yaml:ro

@@ -1,5 +1,5 @@
-# CI (ADR-0034 review): full suite with real Redis (no skipping), curated mutation checks,
-# production image build and the two-instance shared-budget smoke test.
+# CI (ADR-0034 review, ADR-0043): full suite with real Redis (no skipping), curated mutation checks, dashboard bundle
+# budget, production image build, the two-instance shared-budget smoke test, and the dashboard end-to-end test.
 name: CI
 
 on:
@@ -51,3 +51,37 @@ jobs:
       - name: Tear down
         if: always()
         run: docker compose -f docker-compose.yml -f docker-compose.distributed.yml down
+
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # The workflow tears the stack down itself, after collecting logs on failure.
+      E2E_KEEP_STACK: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26.4.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install Chromium for Playwright
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Dashboard end to end (fresh Docker stack, boundary checks, Playwright; plan §7)
+        run: pnpm test:e2e
+      - name: Playwright traces and screenshots on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-artifacts
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+      - name: Logs on failure
+        if: failure()
+        run: docker compose -p pulsegate-e2e -f docker-compose.yml -f docker-compose.dashboard.yml -f docker-compose.e2e.yml logs --no-color
+      - name: Tear down
+        if: always()
+        run: docker compose -p pulsegate-e2e -f docker-compose.yml -f docker-compose.dashboard.yml -f docker-compose.e2e.yml down -v

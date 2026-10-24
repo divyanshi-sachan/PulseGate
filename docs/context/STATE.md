@@ -1,10 +1,11 @@
 # Project State
 
-_Last updated: 2026-10-24 (Phase 5: cache + metrics)_
+_Last updated: 2026-10-24 (Phase 5 complete: cache, metrics, dashboard)_
 
 ## Current phase
-**Phase 5 — Caching and observability: cache + /metrics done** (verified in Docker; CI green on GitHub). Remaining:
-the React dashboard (ADR-0035), then **Phase 6 — release and benchmarks**.
+**Phase 5 — Caching and observability: complete** (cache, `/metrics`, admin API and dashboard; ADR-0036–0043).
+The dashboard e2e passes locally against Docker; the new CI `e2e` job runs on the next push. Next: **Phase 6 — release
+and benchmarks**.
 
 ## Done
 - Product, system-design and implementation specs written.
@@ -35,14 +36,16 @@ the React dashboard (ADR-0035), then **Phase 6 — release and benchmarks**.
 - ADR-0036 review: freshness gaps fixed (Expires, Age, malformed max-age, response Pragma, receipt time); review tests
   for memory/streaming/metrics; 312 tests, 25 mutations.
 
-## Next up (Phase 5 remainder: dashboard; **follow `docs/plans/dashboard.md`**, approved 2026-10-24)
+## Dashboard plan (`docs/plans/dashboard.md`, approved 2026-10-24): all steps done
 0. Review Claude-chosen details: ADR-0026, 0028, 0033.
 1. ~~Contracts + `StatsWindow` + benchmark~~ **done** (ADR-0038).
 2. ~~Admin listener (ADR-0020), auth, `/admin/api/*` endpoints + socket tests~~ **done** (ADR-0039).
 3. ~~Static UI serving + security headers~~ **done** (ADR-0040).
 4. ~~`apps/dashboard` scaffold, tokens, API client, token gate, bundle budget~~ **done** (ADR-0041; Recharts comes with step 5).
 5. ~~Charts + `chart-data` + screens + component/contract tests; re-measure the bundle~~ **done** (ADR-0042: 94.6 / 203.9 KB gz, Recharts kept).
-6. Compose dashboard override + Playwright e2e + CI + Docker verification + docs.
+6. ~~Compose dashboard override + Playwright e2e + CI + Docker verification + docs~~ **done** (ADR-0043).
+
+**Phase 5 exit criterion met** (socket tests + Playwright against Docker). Next: **Phase 6, release and benchmarks**.
 
 Exit criteria: dashboard data matches the gateway's observed behavior in integration tests.
 

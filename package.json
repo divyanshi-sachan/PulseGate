@@ -11,7 +11,7 @@
   },
   "scripts": {
     "build": "pnpm -r run build",
-    "typecheck": "tsc -p tsconfig.json && tsc -p apps/dashboard/tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json && tsc -p apps/dashboard/tsconfig.json && tsc -p tests/e2e/tsconfig.json",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -26,10 +26,14 @@
     "dev:distributed:down": "docker compose -f docker-compose.yml -f docker-compose.distributed.yml down",
     "test:mutations": "node scripts/mutation-check.ts",
     "bench:stats": "node --expose-gc --conditions=@pulsegate/source scripts/bench-stats-window.ts",
-    "bundle:check": "node scripts/check-bundle.ts"
+    "bundle:check": "node scripts/check-bundle.ts",
+    "dev:dashboard": "docker compose -f docker-compose.yml -f docker-compose.dashboard.yml up --build",
+    "dev:dashboard:down": "docker compose -f docker-compose.yml -f docker-compose.dashboard.yml down",
+    "test:e2e": "scripts/e2e.sh"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
+    "@playwright/test": "1.64.1",
     "@pulsegate/observability": "workspace:*",
     "@testcontainers/redis": "12.2.1",
     "@types/node": "26.6.5",
