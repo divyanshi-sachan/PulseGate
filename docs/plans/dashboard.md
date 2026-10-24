@@ -1,6 +1,7 @@
 # Plan: admin API + dashboard (Phase 5 remainder)
 
-_Status: **approved by the user on 2026-10-24.** Decisions: ADR-0037 (amended). Every former open point has been confirmed._
+_Status: **approved by the user on 2026-10-24**, revised the same day for the second review (percentile confidence, memory
+bound, rate formulas, Docker boundary, bundle enforcement, Playwright determinism, full contracts). Decisions: ADR-0037 (amended)._
 
 **Exit criterion (tech_impl §14 Phase 5):** the dashboard's numbers match traffic sent through the gateway, shown by
 socket-level API tests **and** a Playwright test against the Docker stack.
@@ -37,32 +38,101 @@ socket-level API tests **and** a Playwright test against the Docker stack.
 **Smallest justified change.** The rolling window is new code anyway, and it already has to keep per-interval buckets
 internally to roll. Expose those buckets in the API instead of only their sum. No new state, no extra service.
 
-## 2. Rolling window and time-series contract: `packages/observability`
-- **Buckets (confirmed):** **30 × 10-second buckets** (5 minutes). The ADR's earlier example of 5 × 1-minute buckets
-  would give only 5 points per chart, too coarse to show a trend.
-- **Per bucket**, for every route and upstream:
-  - Requests, status classes and error codes (bounded registry).
-  - Rate-limit rejections; cache hit/miss/bypass.
-  - Upstream attempts by outcome; retries.
-  - Latency **reservoir**: Algorithm R, capped at 256 samples per bucket, with injected randomness and clock.
-- **Memory bound:** 30 × 256 × 8 B ≈ 60 KB per route at worst. Unknown ids map to `unmatched`/`unknown`.
-- **Percentiles are measured, never inferred:**
-  - **Per bucket:** p50/p95/p99 from that bucket's own samples; `null` when it had no requests.
-  - **For the window:** a **weighted** quantile over all live reservoirs, each sample weighted by
-    bucket count ÷ bucket samples, so busy and quiet buckets count correctly.
-  - Each value carries `samples` and `exact` (count ≤ cap). Values with fewer than 10 samples are flagged
-    `lowSample: true`.
-- **Honesty rules in the contract:**
-  - Buckets from before the process started are **omitted**, not reported as zeros; `collectingSince` is included.
-  - The newest bucket is `partial: true` with its real elapsed `durationMs`, so rates divide by actual time.
-  - Empty buckets report `requests: 0` and `latency: null`, and the UI draws a **gap**: no interpolation, no smoothing.
-  - The response names the **instance** it describes. There is no cross-instance aggregation here; Prometheus can do that later.
+## 2. Rolling window: `packages/observability`
+- **Buckets:** **30 × 10 s** (5 minutes), ring-indexed by `floor(now / 10 s) mod 30`, with an injected clock.
+- **Series:** one per configured route, one for `unmatched`, one **total**, and one per configured upstream. The set of
+  series is fixed at startup; unknown ids map to `unmatched`/`unknown`.
+- **Allocated only when the admin listener is enabled** (`ADMIN_TOKEN` set). Otherwise it costs nothing.
+- **Per bucket:** the counters in §2.3, plus a latency reservoir (Algorithm R, injected randomness) of **512 samples**,
+  raised from 256 because of the p99 rule below.
 - **Feeding:** the same hook points as `GatewayMetrics`, so both always count the same events (tested).
+
+### 2.1 Percentile confidence, per percentile (review fix)
+For percentile *q* ∈ {0.50, 0.95, 0.99}, the API returns
+`{ value, method, observations, samples, tailSamples, confidence }`:
+- **`method`:**
+  - `"exact"` when every observation is retained (observations ≤ 512 per bucket).
+  - `"sampled"` when the reservoir holds a uniform sample. The window always uses `"sampled"` once any bucket was sampled.
+- **`tailSamples`** = ⌊n × (1 − q)⌋, the number of retained samples lying beyond the estimate. *n* is:
+  - the retained sample count for a bucket;
+  - for the window, the **effective sample size** of the weighted merge, Kish's (Σw)² / Σw², because a heavily weighted
+    busy bucket carries fewer independent samples than its raw count suggests.
+- **`confidence`:**
+  - `"none"`: no observations; `value: null`, drawn as a gap.
+  - `"low"`: `tailSamples` < 5. That needs **n ≥ 10 for p50, n ≥ 100 for p95, n ≥ 500 for p99.** The value is still shown,
+    but visibly marked (dashed segment or hollow point, and a tooltip such as "low confidence: 3 samples above p99,
+    needs 5").
+  - `"ok"` otherwise.
+- **Consequences:**
+  - A per-bucket p99 is "ok" only once a 10-second bucket holds ≥ 500 samples (≈ 50 req/s); at demo traffic it will
+    usually be marked low.
+  - The window p99 becomes "ok" much sooner, because it merges up to 15,360 samples.
+  - The UI never hides this: the KPI tile shows `n` and the confidence.
+- **Window quantile:** a weighted quantile over all live reservoirs, each sample weighted by
+  bucket observations ÷ bucket samples, never derived from `/metrics` histograms.
 - **Tests:**
-  - Rotation and expiry with a fake clock; partial-bucket rate math.
-  - Exact percentiles on small known inputs; the weighted quantile against a brute-force reference.
-  - The reservoir stays bounded under 100,000 samples; low-sample flags.
-  - Mutations: unbounded reservoir, unweighted merge, zero-filling before start.
+  - Exact values on small known inputs.
+  - The weighted quantile and ESS against brute-force references.
+  - Each confidence threshold at n − 1 / n for every *q*.
+  - Exact → sampled switch-over at 512; window method and ESS when buckets mix exact and sampled.
+
+### 2.2 Memory layout and total bound (review fix)
+Fixed-size **typed arrays**, preallocated at startup. Nothing grows with traffic.
+
+| Per series | Layout | Bytes |
+|---|---|---|
+| Latency samples | `Float32Array(30 × 512)` (ms; float32 is ample for latency) | 61,440 |
+| Retained sample count per bucket | `Uint16Array(30)` | 60 |
+| Observations per bucket | `Uint32Array(30)` | 120 |
+| Bucket start times | `Float64Array(30)` | 240 |
+| Counters, route series | `Uint32Array(30 × 36)` (§2.3) | 4,320 |
+| Counters, upstream series | `Uint32Array(30 × 4)` | 480 |
+
+- **Payload:** **66,180 B (64.6 KiB) per route series**, **62,340 B (60.9 KiB) per upstream series**.
+- **Total bound:** **(R + 2) × 64.6 KiB + U × 60.9 KiB**, plus small fixed object overhead per series. For example:
+  - 10 routes / 5 upstreams: 1.05 MiB
+  - 50 / 20: 4.47 MiB
+  - 200 / 100: 18.69 MiB
+- The computed bound is logged at startup.
+- **Benchmark (required):** `scripts/bench-stats-window.ts` (run with `--expose-gc`, also in CI) builds windows for
+  10/5, 50/20 and 200/100 routes/upstreams, fills **every** bucket and reservoir, and measures the change in
+  `heapUsed + arrayBuffers`. It asserts the result is within the formula + 15 %, and that it doesn't grow after a further
+  1,000,000 recorded requests. Results go into the implementation ADR.
+- Mutation: replace the typed reservoir with an unbounded array → the benchmark and unit bound tests fail.
+
+### 2.3 Counters and every rate's formula (review fix)
+Per route bucket, **36 counters**:
+- `requests` (completed responses) and `aborted` (client left before the response finished).
+- `status{1xx..5xx}`.
+- `code{…15 registry codes…}`.
+- `rl{allowed, rejected, degraded}` and `rlUnavailable`.
+- `cache{hit, miss, bypass}` and `store{stored, notStorable, tooLarge}`.
+- `attempts{success, failure, aborted}` and `retries`.
+
+**Rates** in the contract, and in tests against known traffic. A rate is **`null` when its denominator is 0**, never 0 %.
+
+| Rate | Numerator | Denominator | Notes |
+|---|---|---|---|
+| `rps` | `requests` | seconds covered (a partial bucket uses its real elapsed time) | aborted excluded |
+| `successRate` | `status.2xx + status.3xx` | `requests` | |
+| `clientErrorRate` | `status.4xx` | `requests` | includes gateway 4xx (401/404/429…) and upstream 4xx |
+| `errorRate` (server) | `status.5xx` | `requests` | includes gateway 502/503/504 and upstream 5xx |
+| `abortRate` | `aborted` | `requests + aborted` | aborted requests have no status |
+| `rateLimitRejectionRate` | `rl.rejected` | `rl.allowed + rl.rejected` | only requests that **reached the limiter**: 401/404/400 never do; `degraded` counts within `allowed`/`rejected` and is reported separately |
+| `rateLimiterUnavailableRate` | `rlUnavailable` | `rl.allowed + rl.rejected + rlUnavailable` | fail-closed 503s |
+| `cacheHitRatio` | `cache.hit` | `cache.hit + cache.miss` | **bypasses excluded**, so they can't distort the ratio |
+| `cacheBypassRate` | `cache.bypass` | `cache.hit + cache.miss + cache.bypass` | shown next to the hit ratio |
+| `cacheStoreRate` | `store.stored` | `cache.miss` | misses that were stored |
+| `upstreamFailureRate` (route and upstream) | `attempts.failure` | `attempts.success + attempts.failure` | **per attempt**, not per request; `aborted` is neutral (ADR-0024) and reported separately |
+| `retryRate` | `retries` | requests that reached the upstream (`attempts` − `retries`) | |
+
+Window aggregates sum the bucket counters first, then divide, never averaging per-bucket rates.
+
+### 2.4 Honesty rules in the contract
+- Buckets from before the process started are **omitted**, not zero-filled; `collectingSince` is included.
+- The newest bucket is `partial: true` with its real `durationMs`.
+- Empty buckets report zeros and `null` rates and percentiles, so the UI draws gaps: no interpolation, no smoothing.
+- Each response names the **instance**; there is no cross-instance aggregation here.
 
 ## 3. Charting library: measured, not assumed
 Measured on 2026-10-24: identical apps, Vite 8.3.5 production builds, React 19.3.1.
@@ -83,9 +153,14 @@ Measured on 2026-10-24: identical apps, Vite 8.3.5 production builds, React 19.3
 
 **Decision (confirmed):** use **Recharts**, under these conditions:
 - **Lazy-load** the chart chunk (`React.lazy`) so the token gate and shell load first.
-- Set a **bundle budget** enforced in CI: initial JS ≤ 120 KB gz, total ≤ 260 KB gz.
-- Switch to uPlot if the real dashboard breaks the budget, or if Recharts can't meet the chart requirements below
-  without hacks.
+- **Budget, enforced in CI against the real production build** (review): `scripts/check-bundle.ts` reads Vite's
+  `manifest.json` after `vite build`.
+  - **Initial JS** = the entry chunk plus its static imports, gzip −9: **≤ 120 KB**.
+  - **Total JS** = every emitted chunk: **≤ 260 KB**.
+  - It prints a per-chunk table and fails the job on a breach.
+- **If the real dashboard breaches the budget:** first measure the production build (the script's table plus
+  `rollup-plugin-visualizer` once, locally) and look for fixable causes such as eager imports, duplicate dependencies, or
+  icons. Only then compare against a uPlot build of the same screens, and record the numbers in an ADR before switching.
 
 ## 4. Chart and UX requirements (user)
 - **Charts:**
@@ -116,28 +191,45 @@ Measured on 2026-10-24: identical apps, Vite 8.3.5 production builds, React 19.3
   has fewer than 32 characters *(Claude-chosen)*. The token is never logged.
 - **Errors:** 401 `ADMIN_AUTHENTICATION_FAILED` + `WWW-Authenticate: Bearer` in the normalized shape, with request IDs and
   one log line per request.
-- **Endpoints:** read-only JSON. Contracts are **Zod schemas in a shared package**: the gateway tests its responses against
-  them, and the UI validates every response with them.
-
-  | Endpoint | Content |
-  |---|---|
-  | `GET /admin/api/stats` | `window` (aggregate) + `buckets[]` per route and in total (§2) |
-  | `GET /admin/api/upstreams` | breaker snapshot + per-bucket attempts by outcome, failure rate, p95 |
-  | `GET /admin/api/routes` | configured routes (prefix, methods, upstream, auth, limits, cache); no secrets |
-  | `GET /admin/api/rate-limits` | policies, mode, Redis health / degraded state (ADR-0034) |
-  | `GET /admin/api/cache` | entries, bytes, limits, evictions |
-
+- **Endpoints:** read-only JSON. Every contract is a **Zod schema in a shared package**
+  (`packages/admin-contract`, imported by both the gateway and the dashboard). The gateway's tests validate real responses
+  against these schemas, and the UI validates every response with the same schemas. **Full contracts: §5.1.**
 - **UI serving:** `/admin/ui/*` from the dashboard build, with correct content types, path traversal blocked and an
   `index.html` fallback.
 - **Headers:** `X-Content-Type-Options: nosniff`, `Cache-Control: no-store` on the API, long caching for hashed assets,
   and a strict CSP (`default-src 'self'`, no inline scripts).
+- **Security boundary (review):**
+  - **Every** `/admin/api/*` route goes through one Bearer-auth hook registered before the routes. A test enumerates the
+    registered routes and asserts that none bypasses it.
+  - In Docker the admin listener binds `0.0.0.0` *inside* the container, so **other containers on the Compose network can
+    reach it**; publishing to `127.0.0.1` only limits host access. The token is therefore the real boundary. The Docker
+    verification curls `gateway:9090/admin/api/stats` from the `orders-mock` container: 401 without the token, 200 with it.
+  - The CSP and security headers are asserted in both the socket tests and Playwright.
 - **Tests:**
   - The admin listener is off without a token; startup fails on a short token.
-  - 401 for missing, wrong or wrong-scheme tokens; a client API key is rejected.
-  - The API is absent on the public and operations ports.
-  - **Every endpoint's numbers match traffic sent over sockets.**
-  - Static serving rejects traversal; UI files load without a token.
-  - Mutations: auth bypass, token-length check, static traversal.
+  - 401 for missing, wrong or wrong-scheme tokens on **every** endpoint; a client API key is rejected.
+  - The public and operations listeners serve no `/admin/*` path (404 on both).
+  - **Every endpoint's numbers match traffic sent over sockets**, including each rate formula in §2.3.
+  - Static serving rejects traversal (`..`, `%2e%2e`, absolute paths); UI files load without a token.
+  - Mutations: auth hook skipped for one route, token-length check, static traversal, unweighted window quantile,
+    cache bypass counted in the hit ratio.
+
+### 5.1 Admin API contracts (all five endpoints)
+Common envelope:
+`{ instance: { id, startedAt }, generatedAt, window: { seconds: 300, bucketSeconds: 10, collectingSince } }`.
+Time series below means `{ window: Aggregate, buckets: Bucket[] }`. A `Bucket` holds counters, rates and latency for its
+10 s (`start`, `durationMs`, `partial`). `Percentile` is defined in §2.1; rates are defined in §2.3.
+
+| Endpoint | Body | Feeds |
+|---|---|---|
+| `GET /admin/api/stats` | `total` and `routes[]` time series: requests, `rps`, `status{}`, `codes{}`, all request-level rates, `latency{p50,p95,p99: Percentile}`, retries | Overview KPI tiles and trend charts, Routes table and sparklines |
+| `GET /admin/api/upstreams` | `upstreams[]: { id, baseUrl, breaker: { state, consecutiveFailures, halfOpenInFlight, settings }, attempts{success, failure, aborted}, upstreamFailureRate, latency (attempt latency) }`, each as a time series | Upstreams screen: breaker badges, failure-rate and latency trends |
+| `GET /admin/api/routes` | `routes[]: { id, pathPrefix, methods, upstreamId, stripPrefix, auth.required, rateLimit{capacity, refillRatePerSecond}, timeoutMs, attemptTimeoutMs?, retries, cache{enabled, ttlSeconds, scope, varyHeaders, maxResponseBytes}, forwarding }`. Configuration only; no clients, keys or upstream credentials | Routes screen detail panel |
+| `GET /admin/api/rate-limits` | `{ mode, redisFailurePolicy?, backend: { kind: "local" \| "redis", healthy, target? (host:port only), degraded }, maxBuckets, routes[]: { id, policy{capacity, refillRatePerSecond}, rl{allowed, rejected, degraded}, rlUnavailable, rateLimitRejectionRate, rateLimiterUnavailableRate } }`, each as a time series | Rate-limits screen: policy table, rejection trends, Redis health and degraded banner |
+| `GET /admin/api/cache` | `{ limits{maxEntries, maxBytes}, usage{entries, bytes}, evictions{ window{capacity, expired}, lifetime{capacity, expired} }, routes[]: { id, scope, ttlSeconds, cache{hit, miss, bypass}, store{stored, notStorable, tooLarge}, cacheHitRatio, cacheBypassRate, cacheStoreRate } }`, each as a time series | Cache screen: hit-ratio trend, bypass share, store outcomes, memory gauge against limits |
+
+**Screen-to-data check:** every number on every screen in §6 comes from exactly one field above (tracked in the
+implementation ADR). The contract tests fail if a screen fixture uses a field the schema doesn't define.
 
 ## 6. `apps/dashboard`: React + TypeScript + Vite
 - **Tooling:** pinned Vite 8 and React 19.
@@ -158,23 +250,38 @@ Measured on 2026-10-24: identical apps, Vite 8.3.5 production builds, React 19.3
   - **Upstreams:** breaker states and failure trends.
   - **Cache:** hit-ratio trend and memory usage against its bounds.
   - **Rate limits:** rejections and Redis/degraded state.
-- **Refresh:** poll every 5 s, with pause/resume. The window comes from the server, so a page reload shows the full last
+- **Refresh:** poll every 5 s, with pause/resume and a **"Refresh now"** button (also used by the Playwright tests). The window comes from the server, so a page reload shows the full last
   5 minutes immediately.
 - **Tests:**
   - Vitest + Testing Library (jsdom): every state (loading, empty, low traffic, stale, 401), formatting, units.
   - `chart-data` transformation edge cases.
   - Contract fixtures that validate against the shared schemas.
 
-## 7. Playwright end-to-end test (user: now)
-- `@playwright/test` (pinned, Chromium only) runs against the Docker stack with the dashboard override:
-  1. Open `/admin/ui/` and paste the token.
-  2. Generate known traffic: successes, a 429, a cache hit, a breaker opening.
-  3. Assert that the KPI and table values equal `/admin/api/stats` and the expected counts.
-  4. Check that a wrong token returns to the gate.
-- Screenshots and traces are uploaded as CI artifacts on failure.
-- **CI:**
-  - The check job builds, typechecks and tests the dashboard and enforces the bundle budget.
-  - A new `e2e` job (or the docker job) installs Chromium (`playwright install --with-deps chromium`) and runs the suite.
+## 7. Playwright end-to-end test (user: now), deterministic (review)
+- **A dedicated stack:** `docker-compose.e2e.yml` (on top of the dashboard override) with `config/routes.e2e.yaml`.
+  A loader test keeps that file valid. It defines four routes, each with one job:
+  - `e2e-ok`: a healthy mock.
+  - `e2e-limited`: capacity 3, refill 0.001/s.
+  - `e2e-cached`: TTL 600 s.
+  - `e2e-faulty`: its own upstream with `failureThreshold: 2` and `openDurationMs: 600000`, so the breaker cannot close
+    during the test.
+- It also has a fixed e2e `ADMIN_TOKEN`.
+- **Known traffic, generated by the test itself** (Playwright `request` fixture), before opening the UI:
+  - 10 × `e2e-ok`.
+  - 5 × `e2e-limited` → exactly 3 allowed and 2 rejected.
+  - 1 + 4 × `e2e-cached` → 1 miss and 4 hits.
+  - 3 × `e2e-faulty?_reset=1` → 2 failed attempts open the breaker, and the 3rd gets `CIRCUIT_OPEN`.
+  - Faults are explicit (`_reset`), never incidental timing.
+- **Assertions are on exact counts and rates** in the UI, through `data-testid`s, matched against the same numbers from
+  `/admin/api/*`. Examples: the cache hit ratio is 80 %, the rejection rate is 40 %, the breaker badge says "open".
+- **Waiting:** web-first assertions and `expect.poll` with a deadline, plus the dashboard's **"Refresh now"** button. No
+  fixed sleeps. The whole run takes well under 5 minutes, so all traffic stays inside the window.
+- **Isolation and cleanup:** a fresh stack per run (`compose up --wait`), always followed by `compose down -v`, even on
+  failure. Retries are disabled, so a flaky test shows up as red rather than being retried into green.
+- **Also checked:** a wrong token goes back to the gate, the CSP header is present, and nothing is served on `/admin/*` of
+  the public port.
+- **CI:** a dedicated `e2e` job installs Chromium (`playwright install --with-deps chromium`). Traces and screenshots are
+  kept as artifacts on failure. Locally: `pnpm test:e2e`.
 
 ## 8. Docker / Compose
 - The build stage builds the dashboard; the gateway image ships its `dist`. The runtime image still has no dev
@@ -183,13 +290,15 @@ Measured on 2026-10-24: identical apps, Vite 8.3.5 production builds, React 19.3
   `127.0.0.1:9090:9090`. Script: `pnpm dev:dashboard`.
 
 ## 9. Order of work (each step is a commit point; mutations and docs in the same step)
-1. Shared admin API contracts (Zod) + the `StatsWindow` time-series + unit tests + mutations.
+1. `packages/admin-contract` (Zod, §5.1) + the `StatsWindow` (§2: typed arrays, confidence rules, rate formulas) + unit
+   tests + the memory benchmark + mutations.
 2. Admin listener, auth and endpoints + socket integration tests (exit criterion on the API side).
 3. Static UI serving + security headers + tests.
 4. `apps/dashboard` scaffold: tooling in check/lint/typecheck, design tokens, API client, token gate, bundle-budget script.
 5. Chart components + `chart-data` + screens + component and contract tests. **Re-measure the bundle** against the budget
    and record the Recharts/uPlot result in an ADR.
-6. Docker/Compose override + Playwright e2e + CI jobs + Docker verification + docs (README, STATE, implementation ADR).
+6. Docker/Compose dashboard + e2e overrides + deterministic Playwright + CI jobs (bundle budget, benchmark, e2e) + Docker
+   verification, including the cross-container 401 check + docs (README, STATE, implementation ADR).
 
 ## 10. Out of scope
 Write endpoints (route/key management), multi-instance aggregation, long-term history storage, a dark theme (tokens make

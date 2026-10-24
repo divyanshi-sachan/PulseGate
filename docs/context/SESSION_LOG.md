@@ -220,3 +220,12 @@ Format: date · goal · what changed · decisions (ADR links) · open threads.
 - **Decisions (user):** UI files without a token; Compose dashboard override on 127.0.0.1:9090; Recharts (lazy + CI budget); Playwright
   e2e now; 30 × 10 s buckets; in-repo design tokens. User product bar: polished, no fabricated data, data logic outside presentation.
 - **Changed:** `docs/plans/dashboard.md` (approved), ADR-0037 amendments, STATE next steps. No code yet.
+
+## 2026-10-24 · Dashboard plan: second review
+- **Review (user):** proceed after fixing five items + two smaller ones. All incorporated into `docs/plans/dashboard.md` and ADR-0037.
+- **Corrections to my plan:** the p99 rule ("< 10 samples") was statistically wrong, since a 256-sample reservoir has ~2.6 tail samples
+  for p99; replaced with per-percentile tail-count rules (≥ 5 beyond the estimate) and a 512-sample Float32 reservoir. My memory figure
+  counted only raw samples; replaced with a typed-array layout, a formula ((R + 2) × 64.6 KiB + U × 60.9 KiB) and a required heap benchmark.
+- **Added:** a rate formula table (bypass excluded from hit ratio, limiter-only denominator, per-attempt failure rate, null on 0), the Docker
+  boundary (token is the real control; cross-container 401 check), CI bundle-budget script, deterministic Playwright stack, full contracts
+  for all five endpoints with a screen-to-field check.

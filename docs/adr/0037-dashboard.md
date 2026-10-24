@@ -44,3 +44,27 @@
 - **Docker:** `docker-compose.dashboard.yml` + `config/routes.dashboard.example.yaml` (`admin.host: 0.0.0.0` in the container,
   a local-only token), published as `127.0.0.1:9090:9090`.
 - **Testing:** component and contract tests **plus Playwright end to end now**, in CI against the Docker stack.
+
+## Second review (2026-10-24, user): plan clarifications
+- **Percentile confidence per percentile:**
+  - Each percentile carries `method` (`exact` | `sampled`), observations, samples, `tailSamples` and `confidence`.
+  - `low` when fewer than 5 samples lie beyond the estimate: n ≥ 10 for p50, ≥ 100 for p95, ≥ 500 for p99. For the
+    window, n is the effective sample size of the weighted merge.
+  - The reservoir is raised to **512 samples per bucket** (Float32), so a busy 10 s bucket can reach a confident p99.
+- **Memory:**
+  - Fixed, preallocated typed arrays, allocated only when the admin listener is enabled.
+  - Bound: (R + 2) × 64.6 KiB + U × 60.9 KiB, e.g. 4.47 MiB for 50 routes and 20 upstreams.
+  - Verified by `scripts/bench-stats-window.ts` (within formula + 15 %, no growth over 1M requests).
+- **Rates:** every numerator and denominator is defined in the plan (§2.3); `null` when the denominator is 0.
+  - The cache hit ratio excludes bypasses.
+  - The rate-limit rejection rate counts only requests that reached the limiter.
+  - The upstream failure rate is per attempt, with aborts neutral.
+- **Docker boundary:** other containers on the Compose network can reach the admin listener, so Bearer auth on **every**
+  `/admin/api/*` route is the real boundary. It is tested by route enumeration and by a cross-container curl (401 without
+  the token).
+- **Bundle budget** enforced in CI against the real Vite build (initial ≤ 120 KB gz, total ≤ 260 KB gz). Any breach is
+  measured before uPlot is considered.
+- **Playwright** runs on a dedicated deterministic stack: `routes.e2e.yaml`, known traffic, explicit `_reset` faults,
+  a long open period so the breaker can't close mid-test, no sleeps or retries, and teardown always.
+- **Contracts:** all five endpoints are specified as shared Zod schemas (`packages/admin-contract`), with a screen-to-field check.
+
