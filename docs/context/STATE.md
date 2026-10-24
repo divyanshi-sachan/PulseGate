@@ -35,13 +35,14 @@ the React dashboard (ADR-0035), then **Phase 6 — release and benchmarks**.
 - ADR-0036 review: freshness gaps fixed (Expires, Age, malformed max-age, response Pragma, receipt time); review tests
   for memory/streaming/metrics; 312 tests, 25 mutations.
 
-## Next up (Phase 5 remainder: dashboard)
-0. Review Claude-chosen details: ADR-0026, 0028, 0033 (ADR-0036 was reviewed on 2026-10-24).
-1. Dashboard decided (ADR-0037): admin JSON API on the ADR-0020 listener, rolling 5-min window, static Vite build at
-   `/admin/ui/`, token pasted into sessionStorage. Build: admin listener + endpoints + window, then `apps/dashboard`.
-2. Build `apps/dashboard` (React + TypeScript): volume, success/error rates, p50/p95/p99, rate-limit rejections, cache hit
-   ratio, breaker states (tech_impl §11).
-3. Integration test: dashboard numbers match traffic sent through the gateway (Phase 5 exit criterion).
+## Next up (Phase 5 remainder: dashboard; **follow `docs/plans/dashboard.md`**, approved 2026-10-24)
+0. Review Claude-chosen details: ADR-0026, 0028, 0033.
+1. Shared admin API contracts (Zod) + `StatsWindow` (30 × 10 s buckets, weighted percentiles) + tests + mutations.
+2. Admin listener (ADR-0020), auth, `/admin/api/*` endpoints + socket tests.
+3. Static UI serving + security headers.
+4. `apps/dashboard` scaffold (Vite 8 / React 19 / Recharts 3.10.1 lazy), tokens, API client, token gate, bundle budget.
+5. Charts + `chart-data` + screens + component/contract tests; re-measure the bundle.
+6. Compose dashboard override + Playwright e2e + CI + Docker verification + docs.
 
 Exit criteria: dashboard data matches the gateway's observed behavior in integration tests.
 

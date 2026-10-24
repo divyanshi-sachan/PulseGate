@@ -1,6 +1,6 @@
 # ADR-0037: Dashboard: admin API, rolling window, static hosting
 
-- **Status:** Accepted (user chose all recommended options; implementation details to follow in the build)
+- **Status:** Accepted, amended 2026-10-24 by the approved plan (`docs/plans/dashboard.md`)
 - **Date:** 2026-10-24
 - **Source:** dashboard design questions; ADR-0020 (admin listener), ADR-0035 (dashboard after metrics); tech_impl §9.3, §11
 - **Builds on:** ADR-0036 (metrics), ADR-0022 (listeners)
@@ -24,3 +24,23 @@
   published for the demo only.
 - Exit criterion (tech_impl §14 Phase 5): the dashboard's numbers match traffic sent through the gateway in integration tests.
 - The rolling window is bounded memory; its sizing and sample cap are recorded in the implementation ADR.
+
+## Amendments (2026-10-24, approved plan)
+- **Buckets:** **30 × 10 s** instead of the example 5 × 1 min, so trend charts get 30 real points.
+  - Per-bucket reservoirs are capped at 256 samples, about 60 KB per route at worst.
+  - Window percentiles use a weighted quantile over the bucket reservoirs, never the cumulative `/metrics` histograms.
+- **Time series in the API:** `/admin/api/stats` returns the window aggregate **and** the buckets.
+  - Buckets from before the process started are omitted, not zero-filled.
+  - The newest bucket is marked `partial` with its real duration; empty buckets have `latency: null`, so charts show gaps.
+  - The API is for the connected instance only.
+- **API paths:** `/admin/api/{stats,upstreams,routes,rate-limits,cache}`, so they can't collide with the UI under `/admin/ui/`.
+- **Static UI files are served without a token;** every `/admin/api/*` call needs it.
+- **Charts: Recharts 3.10.1**, chosen after measurement.
+  - Measured cost over React alone: Recharts +106.1 KB gz, uPlot +21.3 KB gz.
+  - Conditions: lazy-loaded behind the token gate, CI budget of initial JS ≤ 120 KB gz and total ≤ 260 KB gz.
+  - Fall back to uPlot if the real build breaks the budget.
+- **Design system:** a light, enterprise visual standard as in-repo tokens (`apps/dashboard/src/design`); no account
+  design system exists.
+- **Docker:** `docker-compose.dashboard.yml` + `config/routes.dashboard.example.yaml` (`admin.host: 0.0.0.0` in the container,
+  a local-only token), published as `127.0.0.1:9090:9090`.
+- **Testing:** component and contract tests **plus Playwright end to end now**, in CI against the Docker stack.

@@ -210,3 +210,13 @@ Format: date · goal · what changed · decisions (ADR links) · open threads.
   a call counter with other requests (gateway was right, test fixed).
 - **Verified:** 312 tests (Redis required), 25/25 mutations.
 - **Dashboard decided (user, all recommended):** [ADR-0037](../adr/0037-dashboard.md). Build starts after this commit.
+
+## 2026-10-24 · Dashboard planning
+- **Goal:** plan the dashboard before building (user request).
+- **Findings:** no admin listener or `ADMIN_TOKEN` handling existed; the TS/ESLint setup is Node-only; no account design system exists.
+  **API gap:** a single 5-minute aggregate can't drive honest trend charts, and client-side history built from polls would be smeared and
+  empty after reload. The fix is to expose the window's buckets in the API.
+- **Measured:** chart-library cost over React 19 (Vite 8 prod builds): Recharts 3.10.1 +106.1 KB gz, uPlot 1.6.32 +21.3 KB gz.
+- **Decisions (user):** UI files without a token; Compose dashboard override on 127.0.0.1:9090; Recharts (lazy + CI budget); Playwright
+  e2e now; 30 × 10 s buckets; in-repo design tokens. User product bar: polished, no fabricated data, data logic outside presentation.
+- **Changed:** `docs/plans/dashboard.md` (approved), ADR-0037 amendments, STATE next steps. No code yet.
