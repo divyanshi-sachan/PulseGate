@@ -50,30 +50,31 @@ internally to roll. Expose those buckets in the API instead of only their sum. N
 
 ### 2.1 Percentile confidence, per percentile (review fix)
 For percentile *q* ∈ {0.50, 0.95, 0.99}, the API returns
-`{ value, method, observations, samples, tailSamples, confidence }`:
+`{ value, method, observations, samples, effectiveSamples, tailSamples, confidence }`:
 - **`method`:**
   - `"exact"` when every observation is retained (observations ≤ 512 per bucket).
   - `"sampled"` when the reservoir holds a uniform sample. The window always uses `"sampled"` once any bucket was sampled.
-- **`tailSamples`** = ⌊n × (1 − q)⌋, the number of retained samples lying beyond the estimate. *n* is:
-  - the retained sample count for a bucket;
-  - for the window, the **effective sample size** of the weighted merge, Kish's (Σw)² / Σw², because a heavily weighted
-    busy bucket carries fewer independent samples than its raw count suggests.
-- **`confidence`** *(revised by the ADR-0038 review; the first rule was "≥ 5 samples beyond the estimate")*:
+- **`samples`** = retained samples. **`effectiveSamples`** = the same for a bucket; for the window,
+  min(Kish ESS, Woodruff stratified ESS), because unequal weights *and* different bucket distributions both reduce
+  the information in a merge. **`tailSamples`** = ⌊effectiveSamples × (1 − q)⌋.
+- **`confidence`** *(revised twice by the ADR-0038 reviews; full analysis there)*:
   - `"none"`: no observations; `value: null`, drawn as a gap.
-  - `"ok"`: with 95 % probability, the value lies between the true (q − δ)- and (q + δ)-quantiles, with δ = ±5 / ±2 /
-    ±0.5 points for p50 / p95 / p99. That needs **n ≥ 385 / 457 / 1,522** (effective samples for the window). The rule
-    is distribution-free and was verified by Monte Carlo simulation.
-  - `"low"` otherwise: the value is still shown, visibly marked, with a tooltip giving n and the requirement.
+  - `"low"`: effective samples below the exact threshold **383 / 484 / 1,707** for p50 / p95 / p99 (tolerance
+    ±5 / ±2 / ±0.5 points). Value shown, visibly marked.
+  - `"adequate"` (buckets only): at or above the threshold. Exact order-statistic coverage ≥ 95 % *under the model*
+    "independent draws from one continuous distribution"; not a claim about reality.
+  - `"approximate"` (windows only): both effective sizes meet the threshold. Empirically calibrated, no exact guarantee.
+  - The UI never says "95 %"; the tooltip gives n, the threshold and the label's meaning.
 - **Consequences:**
-  - A per-bucket p99 is never "ok" (≤ 512 samples per bucket), so charts draw it as low confidence.
-  - Per-bucket p50 and p95 become "ok" at ≈ 39 and 46 req/s; the window p99 from ≈ 1,522 requests per 5 minutes.
+  - A per-bucket p99 is never `adequate` (≤ 512 samples), and the window p99 is at most `approximate`.
+  - Per-bucket p50 and p95 become `adequate` at ≈ 38 and 48 req/s.
   - The UI never hides this.
 - **Window quantile:** a weighted quantile over all live reservoirs, each sample weighted by
   bucket observations ÷ bucket samples, never derived from `/metrics` histograms.
 - **Tests:**
   - Exact values on small known inputs.
   - The weighted quantile and ESS against brute-force references.
-  - Each confidence threshold at n − 1 / n for every *q*.
+  - Each threshold is the smallest n whose exact coverage stays ≥ 95 %; labels at n − 1 / n; window never `adequate`.
   - Exact → sampled switch-over at 512; window method and ESS when buckets mix exact and sampled.
 
 ### 2.2 Memory layout and total bound (review fix)

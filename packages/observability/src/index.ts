@@ -2,11 +2,15 @@ export { GatewayMetrics, type BreakerStateName, type MetricsOptions } from './me
 export {
   effectiveSampleSize,
   nearestRank,
+  orderStatisticCoverage,
   percentile,
   ratio,
+  regularizedBeta,
   routeRates,
+  stratifiedEffectiveSamples,
   upstreamRates,
   weightedQuantile,
+  type Stratum,
   type WeightedSample,
 } from './stats-math.ts';
 export {

@@ -10,27 +10,32 @@ export const PERCENTILES = { p50: 0.5, p95: 0.95, p99: 0.99 } as const;
 export type PercentileName = keyof typeof PERCENTILES;
 
 /**
- * Accuracy target for "ok" confidence (ADR-0038 review): with 95 % probability, the reported value lies
- * between the true (q − δ)- and (q + δ)-quantiles. This is distribution-free, because it is a statement
- * about ranks. δ per percentile, in quantile units (0.005 = ±0.5 percentile points):
+ * Percentile confidence (ADR-0038, second review). Labels, from weakest to strongest:
+ * - `none`: no observations.
+ * - `low`: too few (effective) samples for the accuracy target below.
+ * - `approximate`: a window merge of buckets with possibly unequal weights and different distributions. Both the
+ *   Kish and the stratified (Woodruff) effective sample sizes meet the threshold. Empirically calibrated, not a
+ *   guarantee (see ADR-0038).
+ * - `adequate`: a single bucket whose sample count meets the exact threshold below.
+ *
+ * Accuracy target: if the samples are independent draws from one continuous latency distribution, the reported
+ * nearest-rank value lies between the true (q − δ)- and (q + δ)-quantiles with probability ≥ COVERAGE_TARGET.
+ * F(X₍ₖ₎) ~ Beta(k, n − k + 1), so this is an exact, distribution-free order-statistic calculation.
+ * ADEQUATE_SAMPLES is the smallest n from which coverage stays ≥ the target for every larger n (checked to
+ * n = 200,000; coverage oscillates because k = ⌈qn⌉ is an integer).
  */
+export const COVERAGE_TARGET = 0.95;
+/** δ per percentile, in quantile units (0.005 = ±0.5 percentile points). */
 export const RANK_TOLERANCE: Readonly<Record<PercentileName, number>> = {
   p50: 0.05,
   p95: 0.02,
   p99: 0.005,
 };
-export const CONFIDENCE_Z = 1.959963984540054;
-
-/** Samples needed for the accuracy target: n ≥ z² q (1 − q) / δ² (normal approximation to the binomial rank). */
-export function requiredSamples(q: number, tolerance: number): number {
-  return Math.ceil((CONFIDENCE_Z * CONFIDENCE_Z * q * (1 - q)) / (tolerance * tolerance));
-}
-
-/** p50: 385, p95: 457, p99: 1,522 (effective) samples. */
-export const REQUIRED_SAMPLES: Readonly<Record<PercentileName, number>> = {
-  p50: requiredSamples(PERCENTILES.p50, RANK_TOLERANCE.p50),
-  p95: requiredSamples(PERCENTILES.p95, RANK_TOLERANCE.p95),
-  p99: requiredSamples(PERCENTILES.p99, RANK_TOLERANCE.p99),
+/** Exact thresholds for the target above (verified in tests by the incomplete beta function). */
+export const ADEQUATE_SAMPLES: Readonly<Record<PercentileName, number>> = {
+  p50: 383,
+  p95: 484,
+  p99: 1707,
 };
 
 /** Every `code` a counter can carry: the error registry plus the two non-registry outcomes. */

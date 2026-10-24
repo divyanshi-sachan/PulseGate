@@ -1,10 +1,18 @@
-import { PERCENTILES, RANK_TOLERANCE, REQUIRED_SAMPLES } from '@pulsegate/admin-contract';
+import {
+  ADEQUATE_SAMPLES,
+  COVERAGE_TARGET,
+  PERCENTILES,
+  RANK_TOLERANCE,
+} from '@pulsegate/admin-contract';
 import { describe, expect, it } from 'vitest';
 import {
   effectiveSampleSize,
   nearestRank,
+  orderStatisticCoverage,
   percentile,
+  regularizedBeta,
   routeRates,
+  stratifiedEffectiveSamples,
   upstreamRates,
   weightedQuantile,
 } from './index.ts';
@@ -110,87 +118,154 @@ describe('weighted quantile edge cases (ADR-0038 review)', () => {
   });
 });
 
-describe('percentile confidence (ADR-0038 review: accuracy target)', () => {
-  it('derives the required samples from the rank tolerance', () => {
-    expect(REQUIRED_SAMPLES).toEqual({ p50: 385, p95: 457, p99: 1522 });
+describe('exact order-statistic thresholds (ADR-0038, second review)', () => {
+  it('computes the regularized incomplete beta like SciPy', () => {
+    expect(regularizedBeta(0.3, 2, 3)).toBeCloseTo(0.3483, 10);
+    expect(regularizedBeta(0.4, 10, 20)).toBeCloseTo(0.785318389763, 9);
+    expect(regularizedBeta(0.995, 1500, 8)).toBeCloseTo(0.519321811566, 8);
+    expect(regularizedBeta(0.55, 192, 193)).toBeCloseTo(0.97814491141, 8);
+    expect(regularizedBeta(0.7, 1, 1)).toBeCloseTo(0.7, 12);
   });
 
-  it.each(Object.entries(REQUIRED_SAMPLES))('%s is ok only from %s samples', (name, n) => {
-    const q = PERCENTILES[name as keyof typeof PERCENTILES];
-    const at = (samples: number) =>
-      percentile({ value: 1, observations: samples, samples, exact: true, q, requiredSamples: n })
-        .confidence;
-    expect(at(n - 1)).toBe('low');
-    expect(at(n)).toBe('ok');
+  it('matches SciPy coverage values, including where the old thresholds fell short', () => {
+    expect(orderStatisticCoverage(1707, 0.99, 0.005)).toBeCloseTo(0.950157, 5);
+    expect(orderStatisticCoverage(1706, 0.99, 0.005)).toBeCloseTo(0.949899, 5);
+    expect(orderStatisticCoverage(1522, 0.99, 0.005)).toBeCloseTo(0.940492, 5); // normal-approx threshold: < 95 %
+    expect(orderStatisticCoverage(500, 0.99, 0.005)).toBeCloseTo(0.719026, 5); // original "5 tail samples" rule
+    expect(orderStatisticCoverage(383, 0.5, 0.05)).toBeCloseTo(0.950382, 5);
+    expect(orderStatisticCoverage(484, 0.95, 0.02)).toBeCloseTo(0.950882, 5);
   });
 
-  it('meets the accuracy target at the threshold, and misses it well below (Monte Carlo)', () => {
-    // Rank statements are distribution-free, so uniform(0, 1) samples suffice: an estimate x of the
-    // q-quantile is "accurate" when q − δ ≤ x ≤ q + δ.
+  it.each(Object.entries(ADEQUATE_SAMPLES))(
+    '%s threshold %s is the smallest n from which coverage stays >= 95% (checked to n = 20,000)',
+    (name, n0) => {
+      const q = PERCENTILES[name as keyof typeof PERCENTILES];
+      const delta = RANK_TOLERANCE[name as keyof typeof RANK_TOLERANCE];
+      expect(orderStatisticCoverage(n0 - 1, q, delta)).toBeLessThan(COVERAGE_TARGET);
+      let worst = 1;
+      for (let n = n0; n <= 20_000; n++)
+        worst = Math.min(worst, orderStatisticCoverage(n, q, delta));
+      expect(worst).toBeGreaterThanOrEqual(COVERAGE_TARGET);
+    },
+  );
+
+  it('rejects the earlier p95 threshold: coverage dips below 95 % between 457 and 483', () => {
+    const dips = Array.from({ length: 27 }, (_, i) => 457 + i).filter(
+      (n) => orderStatisticCoverage(n, 0.95, 0.02) < COVERAGE_TARGET,
+    );
+    expect(dips.length).toBeGreaterThan(0);
+  });
+
+  it('agrees with a Monte Carlo sanity check at the p99 threshold', () => {
     const random = rng(2024);
-    const coverage = (name: keyof typeof PERCENTILES, n: number, trials: number) => {
-      const q = PERCENTILES[name];
-      const delta = RANK_TOLERANCE[name];
-      let hits = 0;
-      for (let t = 0; t < trials; t++) {
-        const values = Array.from({ length: n }, () => random()).sort((a, b) => a - b);
-        const estimate = nearestRank(values, q) ?? -1;
-        if (estimate >= q - delta && estimate <= q + delta) hits++;
-      }
-      return hits / trials;
-    };
-    for (const name of ['p50', 'p95', 'p99'] as const) {
-      expect({ name, ok: coverage(name, REQUIRED_SAMPLES[name], 600) >= 0.93 }).toEqual({
-        name,
-        ok: true,
-      });
-      expect({
-        name,
-        low: coverage(name, Math.floor(REQUIRED_SAMPLES[name] / 6), 600) < 0.9,
-      }).toEqual({
-        name,
-        low: true,
-      });
+    let hits = 0;
+    const trials = 800;
+    for (let t = 0; t < trials; t++) {
+      const values = Array.from({ length: ADEQUATE_SAMPLES.p99 }, () => random()).sort(
+        (a, b) => a - b,
+      );
+      const estimate = nearestRank(values, 0.99) ?? -1;
+      if (estimate >= 0.985 && estimate <= 0.995) hits++;
     }
-    // The old rule ("5 samples beyond the estimate", n = 500 for p99) misses the p99 target.
-    expect(coverage('p99', 500, 600)).toBeLessThan(0.9);
+    // Exact coverage is 95.02 %; allow ~2.5 standard errors of simulation noise.
+    expect(hits / trials).toBeGreaterThan(0.93);
+  });
+});
+
+describe('confidence labels (ADR-0038, second review)', () => {
+  const at = (n: number, scope: 'bucket' | 'window', effective = n) =>
+    percentile({
+      value: 1,
+      observations: n,
+      samples: n,
+      effectiveSamples: effective,
+      exact: true,
+      q: 0.99,
+      threshold: ADEQUATE_SAMPLES.p99,
+      scope,
+    }).confidence;
+
+  it('labels a bucket adequate only from the exact threshold', () => {
+    expect(at(1706, 'bucket')).toBe('low');
+    expect(at(1707, 'bucket')).toBe('adequate');
   });
 
-  it('reports none (null value) without observations and carries counts and method', () => {
+  it('never labels a window merge adequate: at most approximate', () => {
+    expect(at(1706, 'window')).toBe('low');
+    expect(at(1707, 'window')).toBe('approximate');
+    expect(at(100_000, 'window')).toBe('approximate');
+  });
+
+  it('uses the effective samples, not the raw count, for windows', () => {
+    expect(at(5000, 'window', 1000)).toBe('low');
+  });
+
+  it('reports none (null value) without observations', () => {
     expect(
       percentile({
         value: undefined,
         observations: 0,
         samples: 0,
+        effectiveSamples: 0,
         exact: true,
         q: 0.99,
-        requiredSamples: 1522,
+        threshold: 1707,
+        scope: 'bucket',
       }),
     ).toEqual({
       value: null,
       method: 'exact',
       observations: 0,
       samples: 0,
+      effectiveSamples: 0,
       tailSamples: 0,
       confidence: 'none',
     });
+  });
+});
+
+describe('stratified (Woodruff) effective samples (ADR-0038, second review)', () => {
+  it('equals the plain count for homogeneous buckets', () => {
+    // Two equal buckets, 1,000 samples each, both with 99 % at or below the estimate.
+    const n = stratifiedEffectiveSamples(
+      [
+        { share: 0.5, samples: 1000, atOrBelow: 990 },
+        { share: 0.5, samples: 1000, atOrBelow: 990 },
+      ],
+      0.99,
+    );
+    expect(n).toBeCloseTo(2000, 6);
+  });
+
+  it('is Infinity when every bucket is pure (all below or all above), so Kish must bound it', () => {
     expect(
-      percentile({
-        value: 12,
-        observations: 5000,
-        samples: 512,
-        exact: false,
-        q: 0.99,
-        requiredSamples: 1522,
-      }),
-    ).toEqual({
-      value: 12,
-      method: 'sampled',
-      observations: 5000,
-      samples: 512,
-      tailSamples: 5,
-      confidence: 'low',
-    });
+      stratifiedEffectiveSamples(
+        [
+          { share: 0.9, samples: 512, atOrBelow: 512 },
+          { share: 0.1, samples: 512, atOrBelow: 0 },
+        ],
+        0.99,
+      ),
+    ).toBe(Infinity);
+  });
+
+  it('catches heterogeneity that Kish misses: the tail lives in an under-sampled bucket', () => {
+    // 20 % of traffic in a slow bucket sampled at 200 (95 % below the estimate), 80 % in a fast bucket of
+    // 3,800 samples (all below). Kish sees 2,714 samples; the stratified variance gives ~1,042.
+    const kish = effectiveSampleSize([
+      ...Array.from({ length: 200 }, () => 0.2 / 200),
+      ...Array.from({ length: 3800 }, () => 0.8 / 3800),
+    ]);
+    const woodruff = stratifiedEffectiveSamples(
+      [
+        { share: 0.2, samples: 200, atOrBelow: 190 },
+        { share: 0.8, samples: 3800, atOrBelow: 3800 },
+      ],
+      0.99,
+    );
+    expect(Math.round(kish)).toBe(2714);
+    expect(Math.round(woodruff)).toBe(1042);
+    expect(Math.min(kish, woodruff)).toBeLessThan(ADEQUATE_SAMPLES.p99);
   });
 });
 

@@ -222,10 +222,10 @@ const MUTATIONS: Mutation[] = [
   },
   {
     id: 'stats-raw-count-instead-of-ess',
-    guards: 'plan §2.1: window confidence uses the effective sample size',
+    guards: 'plan §2.1: window confidence uses the effective sample size, not the retained count',
     file: 'packages/observability/src/stats-window.ts',
-    find: 'samples: ess,',
-    replace: 'samples: weighted.length,',
+    find: '  const kish = effectiveSampleSize(weighted.map((s) => s.weight));',
+    replace: '  const kish = weighted.length;',
     tests: ['packages/observability'],
   },
   {
@@ -279,10 +279,45 @@ const MUTATIONS: Mutation[] = [
   {
     id: 'stats-confidence-old-tail-rule',
     guards:
-      'ADR-0038 review: confidence needs the accuracy-derived sample count, not 5 tail samples',
+      'ADR-0038 review 2: confidence needs the exact order-statistic threshold, not 5 tail samples',
     file: 'packages/observability/src/stats-math.ts',
-    find: "    confidence: input.samples >= input.requiredSamples ? 'ok' : 'low',",
-    replace: "    confidence: tailSamples >= 5 ? 'ok' : 'low',",
+    find: '  const enough = effective >= input.threshold;',
+    replace: '  const enough = effective * (1 - input.q) >= 5;',
+    tests: ['packages/observability'],
+  },
+  {
+    id: 'stats-kish-only-window',
+    guards:
+      'ADR-0038 review 2: Kish alone misses heterogeneous buckets; the stratified bound must apply',
+    file: 'packages/observability/src/stats-window.ts',
+    find: '    const effectiveSamples = Math.min(kish, stratifiedEffectiveSamples(strata, q));',
+    replace: '    const effectiveSamples = kish + 0 * stratifiedEffectiveSamples(strata, q);',
+    tests: ['packages/observability'],
+  },
+  {
+    id: 'stats-window-labeled-adequate',
+    guards:
+      'ADR-0038 review 2: a window merge has no exact guarantee, so it is at most "approximate"',
+    file: 'packages/observability/src/stats-math.ts',
+    find: "    confidence: !enough ? 'low' : input.scope === 'bucket' ? 'adequate' : 'approximate',",
+    replace: "    confidence: !enough ? 'low' : 'adequate',",
+    tests: ['packages/observability'],
+  },
+  {
+    id: 'stats-normal-approximation-p99',
+    guards:
+      'ADR-0038 review 2: the normal approximation (1,522) gives only 94 % exact coverage at p99',
+    file: 'packages/admin-contract/src/constants.ts',
+    find: '  p99: 1707,',
+    replace: '  p99: 1522,',
+    tests: ['packages/observability'],
+  },
+  {
+    id: 'stats-normal-approximation-p95',
+    guards: 'ADR-0038 review 2: p95 = 457 dips below the coverage target before 484',
+    file: 'packages/admin-contract/src/constants.ts',
+    find: '  p95: 484,',
+    replace: '  p95: 457,',
     tests: ['packages/observability'],
   },
   {

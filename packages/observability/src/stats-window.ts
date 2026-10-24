@@ -3,7 +3,7 @@ import {
   BUCKET_SECONDS,
   COUNTED_CODES,
   PERCENTILES,
-  REQUIRED_SAMPLES,
+  ADEQUATE_SAMPLES,
   RESERVOIR_SIZE,
   WINDOW_SECONDS,
   type Envelope,
@@ -18,6 +18,7 @@ import {
   nearestRank,
   percentile,
   routeRates,
+  stratifiedEffectiveSamples,
   upstreamRates,
   weightedQuantile,
   type WeightedSample,
@@ -514,9 +515,11 @@ function bucketLatency(series: Series, index: number | undefined): Latency {
       value,
       observations,
       samples: sorted.length,
+      effectiveSamples: sorted.length,
       exact,
       q,
-      requiredSamples: REQUIRED_SAMPLES[name],
+      threshold: ADEQUATE_SAMPLES[name],
+      scope: 'bucket',
     });
   };
   return { p50: make('p50'), p95: make('p95'), p99: make('p99') };
@@ -528,7 +531,9 @@ function bucketLatency(series: Series, index: number | undefined): Latency {
  */
 function windowLatency(series: Series, indexes: (number | undefined)[]): Latency {
   const weighted: WeightedSample[] = [];
+  const buckets: { observations: number; samples: Float32Array }[] = [];
   let observations = 0;
+  let retained = 0;
   let exact = true;
   for (const index of indexes) {
     if (index === undefined) continue;
@@ -536,21 +541,33 @@ function windowLatency(series: Series, indexes: (number | undefined)[]): Latency
     const held = series.sampleCount[index] ?? 0;
     if (seen === 0 || held === 0) continue;
     observations += seen;
+    retained += held;
     if (seen !== held) exact = false;
+    const samples = series.bucketSamples(index);
+    buckets.push({ observations: seen, samples });
     const weight = seen / held;
-    for (const value of series.bucketSamples(index)) weighted.push({ value, weight });
+    for (const value of samples) weighted.push({ value, weight });
   }
-  const ess = effectiveSampleSize(weighted.map((s) => s.weight));
+  const kish = effectiveSampleSize(weighted.map((s) => s.weight));
   const make = (name: keyof typeof PERCENTILES) => {
     const q = PERCENTILES[name];
     const value = weightedQuantile(weighted, q);
+    // Conservative: both Kish (unequal weights) and Woodruff (different bucket distributions) must agree.
+    const strata = buckets.map((b) => ({
+      share: b.observations / observations,
+      samples: b.samples.length,
+      atOrBelow: value === undefined ? 0 : b.samples.reduce((n, v) => (v <= value ? n + 1 : n), 0),
+    }));
+    const effectiveSamples = Math.min(kish, stratifiedEffectiveSamples(strata, q));
     return percentile({
       value,
       observations,
-      samples: ess,
+      samples: retained,
+      effectiveSamples,
       exact,
       q,
-      requiredSamples: REQUIRED_SAMPLES[name],
+      threshold: ADEQUATE_SAMPLES[name],
+      scope: 'window',
     });
   };
   return { p50: make('p50'), p95: make('p95'), p99: make('p99') };

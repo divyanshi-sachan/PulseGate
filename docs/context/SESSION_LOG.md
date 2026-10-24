@@ -247,3 +247,12 @@ Format: date · goal · what changed · decisions (ADR links) · open threads.
 - **Found:** the old "≥ 5 tail samples" rule fails the p99 accuracy target (< 90 % coverage at n = 500); the old wall-clock bucketing
   could reset a newer slot after a backward clock step.
 - **Note:** a per-bucket p99 can now never be "ok" (≤ 512 samples), an honest consequence documented for the dashboard.
+
+## 2026-10-24 · ADR-0038 second review: honest confidence labels
+- **Changed:** thresholds now exact from the order-statistic Beta distribution (383 / 484 / 1,707, the n from which coverage
+  stays ≥ 95 %), replacing the normal approximation; labels `none` / `low` / `approximate` / `adequate` (`adequate` = one
+  bucket under the i.i.d. model; `approximate` = window, empirical only); window effective samples = min(Kish, Woodruff);
+  API gains `effectiveSamples`; incomplete beta + coverage helpers tested against SciPy; 5 mutations new or re-pointed
+  (41 total); ADR-0038 *Second review*; plan §2.1.
+- **Found:** the old p99 threshold 1,522 has only 94.05 % exact coverage, p95 = 457 dips below 95 % before 484, and Kish
+  alone labels slow-burst windows whose true coverage is 82–85 %.

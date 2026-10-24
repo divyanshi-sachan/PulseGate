@@ -12,12 +12,17 @@ const rate = z.number().min(0).max(1).nullable();
 
 export const percentileSchema = z.strictObject({
   value: z.number().min(0).nullable(),
+  /** exact: every observation retained; sampled: a reservoir sample was used. */
   method: z.enum(['exact', 'sampled']),
   observations: count,
-  /** Retained samples (bucket) or effective sample size, rounded down (window). */
+  /** Retained samples (summed over buckets for the window). */
   samples: count,
+  /** Samples the confidence rule used: retained samples (bucket), or min(Kish, Woodruff) for the window, rounded down. */
+  effectiveSamples: count,
+  /** Effective samples expected beyond the estimate, ⌊n_eff · (1 − q)⌋ (informational). */
   tailSamples: count,
-  confidence: z.enum(['none', 'low', 'ok']),
+  /** none < low < approximate < adequate; see ADR-0038 for what each label does and doesn't promise. */
+  confidence: z.enum(['none', 'low', 'approximate', 'adequate']),
 });
 
 export const latencySchema = z.strictObject({

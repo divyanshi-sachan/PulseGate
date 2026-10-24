@@ -129,7 +129,7 @@ describe('StatsWindow percentiles (plan §2.1)', () => {
     const { p50, p95, p99 } = window.routeSeries('orders')?.buckets[0]?.latency ?? ({} as never);
     expect([p50.value, p95.value, p99.value]).toEqual([50, 95, 99]);
     expect([p50.method, p50.observations, p50.samples]).toEqual(['exact', 100, 100]);
-    // 100 samples are exact for this bucket but below every accuracy target (385 / 457 / 1522).
+    // 100 samples are exact for this bucket but below every threshold (383 / 484 / 1,707).
     expect([p50.confidence, p95.confidence, p99.confidence]).toEqual(['low', 'low', 'low']);
     expect(p99.tailSamples).toBe(1);
   });
@@ -170,12 +170,14 @@ describe('StatsWindow percentiles (plan §2.1)', () => {
     expect(latency?.p50.method).toBe('sampled');
     expect(latency?.p50.observations).toBe(5632);
     // Effective sample size (512 + 5120)² / (512·1² + 512·10²) ≈ 613.
-    expect(latency?.p50.samples).toBe(613);
+    expect(latency?.p50.samples).toBe(1024);
+    expect(latency?.p50.effectiveSamples).toBe(613);
     expect(latency?.p99.tailSamples).toBe(6);
-    // ESS 613 meets the p50 (385) and p95 (457) targets but not p99 (1522).
+    // Effective 613 (both buckets are pure at these estimates, so Kish binds) meets p50 (383) and p95 (484), not p99
+    // (1,707). A window merge is at most "approximate", never "adequate".
     expect([latency?.p50.confidence, latency?.p95.confidence, latency?.p99.confidence]).toEqual([
-      'ok',
-      'ok',
+      'approximate',
+      'approximate',
       'low',
     ]);
   });
@@ -320,5 +322,70 @@ describe('StatsWindow counter saturation (ADR-0038 review)', () => {
     window.recordRetries('orders', 'up', 3_000_000_000);
     expect(window.routeSeries('orders')?.window.counters.retries).toBe(4_294_967_295);
     expect(window.upstreamSeries('up')?.window.counters.retries).toBe(4_294_967_295);
+  });
+});
+
+describe('StatsWindow window confidence regressions (ADR-0038, second review)', () => {
+  /** Seeded log-normal latencies (Box–Muller). */
+  function lognormal(seed: number, mu: number, sigma: number) {
+    let a = seed;
+    const u = () => {
+      a = (a * 16807) % 2147483647;
+      return (a - 0.5) / 2147483647;
+    };
+    return () => Math.exp(mu + sigma * Math.sqrt(-2 * Math.log(u())) * Math.cos(2 * Math.PI * u()));
+  }
+
+  function windowOf(buckets: { count: number; draw: () => number }[]) {
+    let monotonic = 0;
+    let seed = 3;
+    const window = new StatsWindow({
+      routes: ['r'],
+      upstreams: [],
+      wallClock: () => T0,
+      monotonic: () => monotonic,
+      random: () => {
+        seed = (seed * 16807) % 2147483647;
+        return (seed - 1) / 2147483646;
+      },
+    });
+    buckets.forEach(({ count, draw }, i) => {
+      if (i > 0) monotonic += 10_000;
+      for (let j = 0; j < count; j++) {
+        window.recordRequest({ routeId: 'r', statusCode: 200, code: undefined, latencyMs: draw() });
+      }
+    });
+    return window.routeSeries('r');
+  }
+
+  it('labels a large equal-weight window approximate, never adequate', () => {
+    const fast = lognormal(11, 0, 0.5);
+    const slow = lognormal(12, 1, 0.5);
+    const series = windowOf(
+      Array.from({ length: 30 }, (_, i) => ({ count: 200, draw: i % 2 === 0 ? fast : slow })),
+    );
+    expect(series?.window.latency.p99.confidence).toBe('approximate');
+    expect(series?.buckets.every((b) => b.latency.p99.confidence === 'low')).toBe(true);
+  });
+
+  it('keeps a slow burst in one heavy bucket at low confidence (true coverage ~85 % there)', () => {
+    const fast = lognormal(21, 0, 0.4);
+    const slow = lognormal(22, 1.5, 0.4);
+    const series = windowOf([
+      { count: 30_000, draw: slow },
+      ...Array.from({ length: 29 }, () => ({ count: 512, draw: fast })),
+    ]);
+    expect(series?.window.latency.p99.confidence).toBe('low');
+  });
+
+  it('can label a single busy bucket adequate for p50 and p95 but never for p99', () => {
+    const draw = lognormal(31, 0, 0.5);
+    const series = windowOf([{ count: 5000, draw }]);
+    const bucket = series?.buckets.at(-1)?.latency;
+    expect([bucket?.p50.confidence, bucket?.p95.confidence, bucket?.p99.confidence]).toEqual([
+      'adequate',
+      'adequate',
+      'low',
+    ]);
   });
 });

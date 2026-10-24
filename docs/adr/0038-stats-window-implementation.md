@@ -54,7 +54,7 @@
      A relative 1e-12 epsilon absorbs summation rounding only (0.1 + 0.2 must not move the 0.3 boundary).
    - New tests: 200 random trials with fractional weights (multiples of 1/8, many ties) against exact integer
      expansion, exact boundaries, ties at the boundary, and order independence.
-2. **Confidence thresholds: replaced, not just tested.** The plan's rule (≥ 5 samples beyond the estimate) was a
+2. **Confidence thresholds: replaced, not just tested** *(superseded by the second review below)*. The plan's rule (≥ 5 samples beyond the estimate) was a
    heuristic, and a simulation shows it fails for p99: at n = 500, fewer than 90 % of p99 estimates land within ±0.5 points.
    - **New rule:** "ok" when, with 95 % probability, the reported value lies between the true (q − δ)- and
      (q + δ)-quantiles. δ is **±5 pts for p50, ±2 pts for p95, ±0.5 pts for p99** *(Claude-chosen tolerances; review)*.
@@ -79,6 +79,66 @@
      zero buckets); rates finite or null at zero elapsed time, never Infinity.
 - **Mutations:** 3 new ones, all caught (the old tail rule, time running backwards, wrapping counters). The ESS
   mutation was re-pointed after the refactor; the suite reported its stale pattern instead of passing silently.
+
+## Second review (2026-10-24, user): the confidence flag must not overstate certainty
+The first fix claimed "95 %" while its Monte Carlo test accepted 93 %, and it used a normal approximation. Both
+are resolved; counter saturation, the monotonic clock and the weighted-percentile tests are unchanged (approved).
+
+### Exact guarantee versus empirical calibration
+- **Exact (one bucket):** the nearest-rank estimate of n samples is X₍ₖ₎ with k = ⌈qn⌉, and F(X₍ₖ₎) ~ Beta(k, n − k + 1)
+  for i.i.d. draws from any continuous distribution. So
+  coverage(n) = P(q − δ ≤ F(X₍ₖ₎) ≤ q + δ) = I_{q+δ}(k, n − k + 1) − I_{q−δ}(k, n − k + 1) exactly.
+  `orderStatisticCoverage()` computes it with a continued-fraction incomplete beta, tested against SciPy.
+- **Empirical (window):** a weighted merge of buckets with different sampling fractions and possibly different
+  distributions has **no exact formula**. Its label is backed only by the variance bounds below and by simulation.
+
+### Exact thresholds (δ = ±5 / ±2 / ±0.5 points, target 95 %)
+| Percentile | Old (normal approx.) | Exact coverage there | First n ≥ 95 % | **Stays ≥ 95 % from** |
+|---|---|---|---|---|
+| p50 | 385 | 95.10 % | 383 | **383** |
+| p95 | 457 | 95.21 %, but dips below 95 % in 457–483 | 454 | **484** |
+| p99 | 1,522 | **94.05 %** | 1,489 | **1,707** |
+
+Coverage oscillates because k is an integer, so the threshold is where it *stays* above (checked to n = 200,000 in the
+analysis, 20,000 in CI). The old p99 rule was wrong; the old 5-tail-samples rule gave 71.9 % at n = 500.
+
+### Is Kish enough? No.
+Kish's ESS corrects for unequal weights only; it assumes every bucket has the same distribution. Simulation
+(log-normal, 1,200–1,500 trials each, true quantile from the full population):
+
+| Scenario | True coverage | Kish | min(Kish, Woodruff) labels it |
+|---|---|---|---|
+| S1: 30 × 60, homogeneous, exact | 95.9 % | 1,800 | approximate |
+| S2: heterogeneous, equal weights | 94.9 % | — | approximate when ≥ 1,707 |
+| S3: 29 fast × 60 + 1 slow × 5,000 | **82.5 %** | passes | **low** (never labeled) |
+| S4–S7: mixed exact/sampled, mild heterogeneity | 100 % | — | approximate |
+| S8: 1 slow × 30,000 + 29 fast × 512 | **84.6 %** | passes | **low** (never labeled) |
+
+- **Added:** Woodruff's stratified variance at the estimate, Var = Σ W_h² p_h(1 − p_h)/n_h (W_h = traffic share,
+  p_h = share of the bucket's samples at or below the estimate), giving n_eff = q(1 − q)/Var. It sees *where* the tail
+  lives. The window uses **min(Kish, Woodruff)**; a pure bucket set (Var = 0) falls back to Kish.
+- A +0.5 continuity correction was tried and rejected: it made small strata needlessly conservative.
+- Crafted unit case: W = 0.2 (200 samples, 95 % below) and W = 0.8 (3,800, all below). Kish = 2,714 passes p99, but
+  Woodruff = 1,042, so the window is low.
+
+### Labels, and what they mean
+- `none`: no observations; value null.
+- `low`: fewer (effective) samples than the exact threshold. Value shown, visibly marked.
+- `adequate`: **one bucket** with ≥ 383 / 484 / 1,707 retained samples. Meaning: *if* its samples are independent draws
+  from one continuous distribution, the value is within ±δ of the true quantile with probability ≥ 95 %. That is a
+  model statement, not "95 % certainty about reality" (bursts and autocorrelated latency break independence).
+- `approximate`: **a window** where both effective sizes meet the threshold. Empirically calibrated, no guarantee.
+- **Consequences:** per-bucket p99 is never `adequate` (≤ 512 samples); window p99 is at most `approximate`;
+  per-bucket p50 and p95 need ≈ 38 and 48 req/s. No user-facing text says "95 %"; the tooltip states n, the threshold
+  and the label's meaning.
+
+### Regression tests and mutations
+- Tests: incomplete beta against SciPy; coverage at old and new thresholds; each threshold is the smallest n that stays
+  above the target (n − 1 is below); a seeded Monte Carlo check at p99; label boundaries (bucket 1,706 low and 1,707
+  adequate; a window never adequate); Woodruff homogeneous / pure / Kish-misses cases; window regressions (S8-like
+  stays low; homogeneous 30 × 200 approximate; a 5,000-request bucket adequate for p50/p95, low for p99).
+- Mutations (5 new or re-pointed, 41 in total, all caught): the 5-tail rule, Kish only, window labeled adequate,
+  normal-approximation p99 = 1,522 and p95 = 457.
 
 ## Consequences
 - Step 2 wires the window into the gateway hooks (only when `ADMIN_TOKEN` is set) and assembles the five endpoints from
