@@ -2,9 +2,9 @@ import { once } from 'node:events';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
-import { createMockServer, type MockOptions } from './index.ts';
+import { createMockServer, MAX_FAIL_KEYS, type MockOptions } from './index.ts';
 
-let server: Server | undefined;
+let server: (Server & { failKeys: () => number }) | undefined;
 afterEach(async () => {
   if (server === undefined) return;
   server.closeAllConnections();
@@ -84,5 +84,32 @@ describe('mock upstream', () => {
     const sized = await fetch(`${base}/x?_bytes=100&_contentLength=1`);
     expect(sized.headers.get('content-length')).toBe('100');
     expect((await sized.text()).length).toBe(100);
+  });
+
+  it('fails exactly the first n requests per key, then answers normally', async () => {
+    const base = await start();
+    const statuses = async (key: string, times: number) => {
+      const out: number[] = [];
+      for (let i = 0; i < times; i++) {
+        out.push((await fetch(`${base}/x?_failTimes=2&_key=${key}`)).status);
+      }
+      return out;
+    };
+    expect(await statuses('a', 4)).toEqual([503, 503, 200, 200]);
+    // Keys are independent.
+    expect(await statuses('b', 3)).toEqual([503, 503, 200]);
+    // Without a key, or with an invalid count, nothing fails.
+    expect((await fetch(`${base}/x?_failTimes=2`)).status).toBe(200);
+    expect((await fetch(`${base}/x?_failTimes=0&_key=c`)).status).toBe(200);
+  });
+
+  it('combines with _status for the eventual answer and keeps the key table bounded', async () => {
+    const base = await start();
+    expect((await fetch(`${base}/x?_failTimes=1&_key=s&_status=201`)).status).toBe(503);
+    expect((await fetch(`${base}/x?_failTimes=1&_key=s&_status=201`)).status).toBe(201);
+    for (let i = 0; i < MAX_FAIL_KEYS + 50; i++) {
+      await fetch(`${base}/x?_failTimes=1&_key=k${String(i)}`);
+    }
+    expect(server?.failKeys()).toBe(MAX_FAIL_KEYS);
   });
 });

@@ -38,3 +38,15 @@ echo "UI served from the image with the strict CSP"
 
 # --- Playwright ----------------------------------------------------------------------------------------------
 E2E_ADMIN_TOKEN=$TOKEN pnpm exec playwright test "$@"
+
+# --- F5 in Prometheus: the recovery went through half-open to closed (operations listener, inside the container) --
+metrics=$("${COMPOSE[@]}" exec -T gateway node -e "fetch('http://127.0.0.1:9091/metrics').then((r) => r.text()).then(console.log)")
+for transition in 'from="closed",to="open"' 'from="open",to="half-open"' 'from="half-open",to="closed"'; do
+  line=$(echo "$metrics" | grep 'pulsegate_circuit_breaker_transitions_total' | grep 'upstream="recover-service"' | grep "$transition" || true)
+  count=${line##* }
+  if [ -z "$line" ] || [ "${count%.*}" -lt 1 ]; then
+    echo "FAIL: recover-service transition $transition missing from /metrics" >&2
+    exit 1
+  fi
+done
+echo "recover-service breaker transitions closed -> open -> half-open -> closed recorded in /metrics"

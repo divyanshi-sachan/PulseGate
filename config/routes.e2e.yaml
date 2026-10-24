@@ -14,6 +14,16 @@ upstreams:
     circuitBreaker:
       failureThreshold: 2
       openDurationMs: 600000 # stays open for the whole run
+  # Fault scenarios F1-F6 (docs/plans/real-data-testing.md §2): one upstream entry each, so each has its own breaker.
+  - id: slow-service
+    baseUrl: 'http://orders-mock:4001'
+  - id: retry-service
+    baseUrl: 'http://orders-mock:4001'
+  - id: recover-service
+    baseUrl: 'http://payments-mock:4002'
+    circuitBreaker:
+      failureThreshold: 2
+      openDurationMs: 3000 # short, so recovery is observable within the run
 
 routes:
   - id: e2e-ok
@@ -42,5 +52,31 @@ routes:
     pathPrefix: '/e2e/faulty'
     methods: ['GET']
     upstreamId: faulty-service
+    auth: { required: false }
+    rateLimit: { capacity: 1000, refillRatePerSecond: 1000 }
+
+  # F1: the upstream answers after 1,500 ms (_delay), the route gives up at 500 ms -> 504 UPSTREAM_TIMEOUT.
+  - id: e2e-slow
+    pathPrefix: '/e2e/slow'
+    methods: ['GET']
+    upstreamId: slow-service
+    auth: { required: false }
+    rateLimit: { capacity: 1000, refillRatePerSecond: 1000 }
+    timeoutMs: 500
+
+  # F2/F3: deterministic failures via the mock's _failTimes; up to 3 attempts.
+  - id: e2e-retry
+    pathPrefix: '/e2e/retry'
+    methods: ['GET']
+    upstreamId: retry-service
+    auth: { required: false }
+    rateLimit: { capacity: 1000, refillRatePerSecond: 1000 }
+    retries: { maxAttempts: 3, baseDelayMs: 10, maxDelayMs: 50 }
+
+  # F4-F6: the breaker opens after 2 failures and recovers through half-open after 3 s.
+  - id: e2e-recover
+    pathPrefix: '/e2e/recover'
+    methods: ['GET']
+    upstreamId: recover-service
     auth: { required: false }
     rateLimit: { capacity: 1000, refillRatePerSecond: 1000 }

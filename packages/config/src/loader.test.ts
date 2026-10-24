@@ -66,7 +66,7 @@ describe('loadConfigFile', () => {
     expect(config.routes.map((r) => r.id)).toEqual(['get-orders', 'create-orders', 'get-payments']);
   });
 
-  it('loads the e2e config with the four single-purpose routes (plan §7)', async () => {
+  it('loads the e2e config: plan §7 routes plus the fault scenarios F1-F6', async () => {
     const config = await loadConfigFile(
       fileURLToPath(new URL('../../../config/routes.e2e.yaml', import.meta.url)),
     );
@@ -75,7 +75,16 @@ describe('loadConfigFile', () => {
       'e2e-limited',
       'e2e-cached',
       'e2e-faulty',
+      'e2e-slow',
+      'e2e-retry',
+      'e2e-recover',
     ]);
+    expect(config.routes.find((r) => r.id === 'e2e-slow')?.timeoutMs).toBe(500);
+    expect(config.routes.find((r) => r.id === 'e2e-retry')?.retries.maxAttempts).toBe(3);
+    expect(config.upstreams.find((u) => u.id === 'recover-service')?.circuitBreaker).toMatchObject({
+      failureThreshold: 2,
+      openDurationMs: 3000,
+    });
     expect(config.routes.find((r) => r.id === 'e2e-limited')?.rateLimit).toEqual({
       capacity: 3,
       refillRatePerSecond: 0.001,

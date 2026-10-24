@@ -99,7 +99,8 @@ Unit tests sit next to code in `src/`; socket-level integration tests with mock 
 `apps/dashboard` (React 19 + Vite 8, browser code: own tsconfig, jsdom Vitest project, react-hooks lint; validates
 every API response with `@pulsegate/admin-contract`; tokens in `src/design/tokens.css`; strict CSP, so no inline
 scripts or styles; data shaping only in `src/data/`, colours only via CSS classes; polling via `usePoll`; ADR-0041, 0042).
-`examples/mock-upstreams` (dev/demo upstream with `_delay`/`_status`/`_reset`/`_bytes`/`_failRate` query faults).
+`examples/mock-upstreams` (dev/demo upstream with `_delay`/`_status`/`_reset`/`_bytes`/`_failRate` query faults, and the
+deterministic `_failTimes=<n>&_key=<k>` for exact retry/breaker tests, ADR-0044).
 Docker: one multi-stage `Dockerfile` (targets `gateway` incl. the dashboard at `/app/ui`, `mock-upstreams`); Compose mounts
 `config/routes.example.yaml`; overrides `docker-compose.{distributed,dashboard,e2e}.yml` (ADR-0034, 0043). Dashboard code must
 import `./zod-config.ts` first in `main.tsx` (Zod jitless, strict CSP).

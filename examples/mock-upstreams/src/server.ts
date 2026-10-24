@@ -8,6 +8,8 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
  *   _delay=<ms>        wait before responding (max 60000)
  *   _status=<code>     respond with this status (100-599)
  *   _failRate=<0..1>   respond 503 with this probability
+ *   _failTimes=<n>     with _key=<k>: respond 503 to the first n requests carrying that key, then normally.
+ *                      Deterministic, for retry and breaker-recovery tests; use a fresh key per test run
  *   _reset=1           destroy the connection without a response
  *   _bytes=<n>         stream n bytes of "x" (chunked) instead of the JSON echo
  *   _contentLength=1   with _bytes, send Content-Length up front
@@ -22,6 +24,9 @@ export interface MockOptions {
 }
 
 const MAX_DELAY_MS = 60_000;
+/** Distinct `_key` counters kept for `_failTimes`; the least recently used is dropped beyond this. */
+export const MAX_FAIL_KEYS = 1000;
+const MAX_FAIL_TIMES = 1000;
 const MAX_ECHO_BODY_BYTES = 64 * 1024;
 const MAX_STREAM_BYTES = 1024 * 1024 * 1024;
 const CHUNK = Buffer.alloc(16 * 1024, 'x');
@@ -84,10 +89,32 @@ async function readBody(req: IncomingMessage): Promise<{ text: string; bytes: nu
   return { text: Buffer.concat(chunks).toString('utf8'), bytes };
 }
 
-export function createMockServer(options: MockOptions): Server {
-  const random = options.random ?? Math.random;
+/** Requests seen per `_key`, bounded (LRU by insertion order refresh). */
+class KeyCounter {
+  readonly #seen = new Map<string, number>();
 
-  return createServer((req, res) => {
+  /** Counts this request and returns how many came before it with the same key. */
+  next(key: string): number {
+    const before = this.#seen.get(key) ?? 0;
+    this.#seen.delete(key);
+    this.#seen.set(key, before + 1);
+    if (this.#seen.size > MAX_FAIL_KEYS) {
+      const oldest = this.#seen.keys().next().value;
+      if (oldest !== undefined) this.#seen.delete(oldest);
+    }
+    return before;
+  }
+
+  get size(): number {
+    return this.#seen.size;
+  }
+}
+
+export function createMockServer(options: MockOptions): Server & { failKeys: () => number } {
+  const random = options.random ?? Math.random;
+  const counter = new KeyCounter();
+
+  const server = createServer((req, res) => {
     void (async () => {
       const rawUrl = req.url ?? '/';
       const params = new URL(rawUrl, 'http://mock').searchParams;
@@ -109,6 +136,11 @@ export function createMockServer(options: MockOptions): Server {
       let status = intParam(params, '_status', 100, 599) ?? 200;
       const failRate = Number(params.get('_failRate') ?? '0');
       if (failRate > 0 && random() < failRate) status = 503;
+      const failTimes = intParam(params, '_failTimes', 1, MAX_FAIL_TIMES);
+      const key = params.get('_key');
+      if (failTimes !== undefined && key !== null && key !== '' && counter.next(key) < failTimes) {
+        status = 503;
+      }
 
       const bytes = intParam(params, '_bytes', 0, MAX_STREAM_BYTES);
       if (bytes !== undefined) {
@@ -128,4 +160,5 @@ export function createMockServer(options: MockOptions): Server {
       res.destroy();
     });
   });
+  return Object.assign(server, { failKeys: () => counter.size });
 }

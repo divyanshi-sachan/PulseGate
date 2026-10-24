@@ -588,6 +588,14 @@ const MUTATIONS: Mutation[] = [
     tests: ['apps/dashboard/src/main.test.ts'],
   },
   {
+    id: 'mock-fail-times-off-by-one',
+    guards: 'real-data plan §2: _failTimes fails exactly n requests per key (F2/F3 depend on it)',
+    file: 'examples/mock-upstreams/src/server.ts',
+    find: '&& counter.next(key) < failTimes) {',
+    replace: '&& counter.next(key) <= failTimes) {',
+    tests: ['examples/mock-upstreams'],
+  },
+  {
     id: 'ready-despite-redis-down',
     guards: 'ADR-0034: fail-closed readiness reflects Redis',
     file: 'apps/gateway/src/app.ts',

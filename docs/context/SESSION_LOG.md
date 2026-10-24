@@ -304,3 +304,23 @@ Format: date · goal · what changed · decisions (ADR links) · open threads.
   first-imported module (guard test + mutation), CSP unchanged.
 - **Unverified:** the CI `e2e` job runs on the next push.
 - **Next:** Phase 6, release and benchmarks.
+
+## 2026-10-24 · Phase 6 planning started
+- **Checked:** CI on `1110e32`: `docker` and the new `e2e` job green on GitHub; `check` was still on its mutation step.
+- **Drafted:** `docs/plans/phase6.md` (benchmarks B0–B6, release deliverables, order of work), not yet reviewed.
+- **User direction:** no license for now; **test on real data first**. What "real data" means (real upstream APIs,
+  realistic load, or the user's own service) is not settled yet. Ask before building.
+- **Blockers resolved:** Q3/Q6/Q8/Q9/Q11 are all answered (ADRs 0032, 0033, 0035); STATE's blocker line is updated.
+- **Later the same day:** the user chose real public APIs (correctness) + k6 against mocks (load). Inventory and plan in
+  `docs/plans/real-data-testing.md` (R1–R9, F1–F6, K0–K8, CI split). Probe: Postman Echo and httpbin reachable;
+  JSONPlaceholder resets TLS from this network (excluded). Awaiting plan review.
+
+## 2026-10-24 · Real-data testing, step 1: deterministic faults in Docker
+- **Plan:** approved with review tightening (§3a: equivalent K0/K1 baselines, K4 cache-key stability and three-way
+  reconciliation, K5 interval derived from the limiter's semantics, informational performance thresholds).
+- **Changed:** mock `_failTimes`/`_key` (bounded, tested); e2e routes `e2e-slow`, `e2e-retry` and `e2e-recover` with their
+  own upstreams; Playwright F1–F6 (timeout, retry then success, retries exhausted, breaker open, recovery, isolation)
+  with exact totals including polls; e2e.sh checks the recovery transitions in `/metrics`; 1 mutation (69 total);
+  ADR-0044.
+- **Ran:** `pnpm test:e2e` twice (4/4 passed, transitions found, stack removed); `pnpm check` (524 passed); mutations 69/69.
+- **Next:** step 2, real public API smoke tests (Postman Echo + httpbin, ≤ 30 requests per run, opt-in).

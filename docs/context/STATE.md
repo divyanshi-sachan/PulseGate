@@ -4,8 +4,9 @@ _Last updated: 2026-10-24 (Phase 5 complete: cache, metrics, dashboard)_
 
 ## Current phase
 **Phase 5 — Caching and observability: complete** (cache, `/metrics`, admin API and dashboard; ADR-0036–0043).
-The dashboard e2e passes locally against Docker; the new CI `e2e` job runs on the next push. Next: **Phase 6 — release
-and benchmarks**.
+The dashboard e2e passes locally against Docker; the new CI `e2e` job runs on the next push. Next: **Phase 6**, starting with
+**testing on real data** per `docs/plans/real-data-testing.md` (approved): step 1, deterministic Docker faults F1–F6,
+is **done** (ADR-0044); next is step 2, the real public API smoke tests R1–R9. License and release work deferred.
 
 ## Done
 - Product, system-design and implementation specs written.
@@ -50,5 +51,5 @@ and benchmarks**.
 Exit criteria: dashboard data matches the gateway's observed behavior in integration tests.
 
 ## Blockers / risks
-- Later phases still need Q3, Q6, Q8, Q9, Q11 (see OPEN_QUESTIONS.md).
+- No open questions block current work (OPEN_QUESTIONS.md: all resolved).
 - Repo: `main` tracks `origin` (github.com/divyanshi-sachan/PulseGate). The user commits and pushes (see CLAUDE.md › Git workflow).
