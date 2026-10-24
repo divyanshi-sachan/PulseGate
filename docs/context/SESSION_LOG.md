@@ -229,3 +229,12 @@ Format: date · goal · what changed · decisions (ADR links) · open threads.
 - **Added:** a rate formula table (bypass excluded from hit ratio, limiter-only denominator, per-attempt failure rate, null on 0), the Docker
   boundary (token is the real control; cross-container 401 check), CI bundle-budget script, deterministic Playwright stack, full contracts
   for all five endpoints with a screen-to-field check.
+
+## 2026-10-24 · Dashboard step 1: contracts + StatsWindow
+- **Changed:** new `packages/admin-contract` (Zod schemas for all five endpoints, shared constants); `stats-math.ts` (nearest rank, weighted
+  quantile, Kish ESS, per-percentile confidence, every rate formula) and `stats-window.ts` (typed-array 30 × 10 s buckets, 512-sample
+  reservoirs, route/unmatched/total/upstream series) in `packages/observability`; `scripts/bench-stats-window.ts` + `pnpm bench:stats`
+  (CI); 10 mutations; Dockerfile manifest; CLAUDE.md; [ADR-0038](../adr/0038-stats-window-implementation.md).
+- **Verified:** 30 unit tests, 10/10 new mutations, benchmark within formula +12 % with no growth over 1M requests.
+- **Mistake caught:** the first benchmark version undercounted memory by ~20 % (lazy ArrayBuffer release across configs in one process);
+  fixed by isolating each config in a child process. Not yet wired into the gateway (step 2).

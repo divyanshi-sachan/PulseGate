@@ -29,6 +29,8 @@ jobs:
       - name: Format, lint, typecheck, tests (incl. Redis outage/recovery/concurrency)
         run: pnpm check
       - run: pnpm build
+      - name: Stats window memory bound (plan §2.2)
+        run: pnpm bench:stats
       - name: Mutation checks (each re-introduced bug must fail the suite)
         run: pnpm test:mutations
 

@@ -42,3 +42,4 @@ Accepted ADRs **override** the spec documents where they conflict. Create new on
 | [0035](0035-phase5-scope.md) | Phase 5 scope: cache partitioning, deduplication, observability | Accepted |
 | [0036](0036-response-cache-and-metrics.md) | Response cache and Prometheus metrics (Phase 5) | Accepted (reviewed) |
 | [0037](0037-dashboard.md) | Dashboard: admin API, rolling window, static hosting | Accepted |
+| [0038](0038-stats-window-implementation.md) | Stats window and admin contracts (dashboard step 1) | Accepted (review details) |

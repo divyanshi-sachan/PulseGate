@@ -37,7 +37,7 @@ the React dashboard (ADR-0035), then **Phase 6 — release and benchmarks**.
 
 ## Next up (Phase 5 remainder: dashboard; **follow `docs/plans/dashboard.md`**, approved 2026-10-24)
 0. Review Claude-chosen details: ADR-0026, 0028, 0033.
-1. Shared admin API contracts (Zod) + `StatsWindow` (30 × 10 s buckets, weighted percentiles) + tests + mutations.
+1. ~~Contracts + `StatsWindow` + benchmark~~ **done** (ADR-0038).
 2. Admin listener (ADR-0020), auth, `/admin/api/*` endpoints + socket tests.
 3. Static UI serving + security headers.
 4. `apps/dashboard` scaffold (Vite 8 / React 19 / Recharts 3.10.1 lazy), tokens, API client, token gate, bundle budget.

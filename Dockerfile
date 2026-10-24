@@ -12,6 +12,7 @@ WORKDIR /repo
 # Install dependencies from manifests only, so source edits don't invalidate this layer.
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/gateway/package.json apps/gateway/
+COPY packages/admin-contract/package.json packages/admin-contract/
 COPY packages/cache/package.json packages/cache/
 COPY packages/config/package.json packages/config/
 COPY packages/observability/package.json packages/observability/

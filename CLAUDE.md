@@ -89,6 +89,7 @@ namespaces or parameter properties (`erasableSyntaxOnly`). Existing: `packages/s
 `packages/rate-limiter` (RateLimiter strategy + LocalTokenBucketLimiter, ADR-0032),
 `packages/reliability` (CircuitBreaker + registry, retry policy; ADR-0033),
 `packages/testing` (dev-only: Testcontainers Redis + fault-injecting TcpProxy),
+`packages/admin-contract` (browser-safe Zod contracts for /admin/api/*, shared with the dashboard; ADR-0038),
 `packages/cache` (MemoryResponseCache + cacheability rules; ADR-0036), `packages/observability` (bounded Prometheus
 metrics, served at `/metrics` on the operations listener; ADR-0036),
 `apps/gateway` (Fastify listeners; validate → match → ApiKeyAuthenticator → rate limit → ProxyService executor with
@@ -132,6 +133,7 @@ pnpm dev:down         # docker compose down
 pnpm dev:distributed  # + Redis and a second gateway on :8081 sharing one budget (ADR-0034)
 REQUIRE_REDIS_TESTS=1 pnpm test   # fail instead of skipping when Docker/Redis is unavailable (CI does this)
 pnpm test:mutations   # curated mutation suite: each re-introduced bug must fail the tests (also in CI)
+pnpm bench:stats      # stats-window heap vs formula, one child process per config (also in CI)
 scripts/smoke-distributed.sh      # with dev:distributed running: exactly 30/100 pass across 2 instances
 ```
 

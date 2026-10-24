@@ -18,6 +18,7 @@
     "build": "tsc -p tsconfig.build.json"
   },
   "dependencies": {
+    "@pulsegate/admin-contract": "workspace:*",
     "@pulsegate/shared": "workspace:*",
     "prom-client": "15.1.3"
   }

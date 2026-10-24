@@ -2,7 +2,7 @@
   "name": "pulsegate",
   "version": "0.0.0",
   "private": true,
-  "description": "PulseGate \u2014 API gateway and reliability platform",
+  "description": "PulseGate — API gateway and reliability platform",
   "license": "UNLICENSED",
   "type": "module",
   "packageManager": "pnpm@11.9.0",
@@ -24,10 +24,12 @@
     "keygen": "node --conditions=@pulsegate/source apps/gateway/src/keygen.ts",
     "dev:distributed": "docker compose -f docker-compose.yml -f docker-compose.distributed.yml up --build",
     "dev:distributed:down": "docker compose -f docker-compose.yml -f docker-compose.distributed.yml down",
-    "test:mutations": "node scripts/mutation-check.ts"
+    "test:mutations": "node scripts/mutation-check.ts",
+    "bench:stats": "node --expose-gc --conditions=@pulsegate/source scripts/bench-stats-window.ts"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
+    "@pulsegate/observability": "workspace:*",
     "@testcontainers/redis": "12.2.1",
     "@types/node": "26.6.5",
     "eslint": "10.13.0",
