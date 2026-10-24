@@ -47,6 +47,9 @@ importers:
 
   apps/gateway:
     dependencies:
+      '@pulsegate/admin-contract':
+        specifier: workspace:*
+        version: link:../../packages/admin-contract
       '@pulsegate/cache':
         specifier: workspace:*
         version: link:../../packages/cache

@@ -43,3 +43,4 @@ Accepted ADRs **override** the spec documents where they conflict. Create new on
 | [0036](0036-response-cache-and-metrics.md) | Response cache and Prometheus metrics (Phase 5) | Accepted (reviewed) |
 | [0037](0037-dashboard.md) | Dashboard: admin API, rolling window, static hosting | Accepted |
 | [0038](0038-stats-window-implementation.md) | Stats window and admin contracts (dashboard step 1) | Accepted (review details) |
+| [0039](0039-admin-listener-implementation.md) | Admin listener and API (dashboard step 2) | Accepted (review details) |

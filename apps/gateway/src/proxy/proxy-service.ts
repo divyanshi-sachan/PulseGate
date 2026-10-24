@@ -29,6 +29,7 @@ export interface ProxyServiceOptions {
     upstreamId: string,
     outcome: 'success' | 'failure' | 'aborted',
     seconds: number,
+    routeId: string,
   ) => void;
 }
 
@@ -142,7 +143,7 @@ export class ProxyService {
   }
 
   /** Reports the attempt's outcome and duration when its permit settles (exactly once). */
-  #observed(permit: BreakerPermit, upstreamId: string): BreakerPermit {
+  #observed(permit: BreakerPermit, upstreamId: string, routeId: string): BreakerPermit {
     const report = this.#onAttemptSettled;
     if (report === undefined) return permit;
     const started = performance.now();
@@ -151,7 +152,7 @@ export class ProxyService {
       apply();
       if (reported) return;
       reported = true;
-      report(upstreamId, outcome, (performance.now() - started) / 1000);
+      report(upstreamId, outcome, (performance.now() - started) / 1000, routeId);
     };
     return {
       success: () => {
@@ -201,7 +202,7 @@ export class ProxyService {
       body?.destroy();
       throw new CircuitOpenError(first.retryAfterMs);
     }
-    let permit: BreakerPermit = this.#observed(first.permit, upstream.config.id);
+    let permit: BreakerPermit = this.#observed(first.permit, upstream.config.id, input.route.id);
 
     for (let attempt = 1; ; attempt++) {
       input.onAttempt?.();
@@ -219,7 +220,7 @@ export class ProxyService {
           input.clientSignal,
         );
         if (next === undefined) throw result.error;
-        permit = this.#observed(next, upstream.config.id);
+        permit = this.#observed(next, upstream.config.id, input.route.id);
         continue;
       }
 
@@ -253,7 +254,7 @@ export class ProxyService {
         // Destroyed rather than drained: a retryable error body may be large, and reading it only
         // to keep one connection alive isn't worth it. Undici opens a new connection as needed.
         discard(response);
-        permit = this.#observed(next, upstream.config.id);
+        permit = this.#observed(next, upstream.config.id, input.route.id);
         continue;
       }
 

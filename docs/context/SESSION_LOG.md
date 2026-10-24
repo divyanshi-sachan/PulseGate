@@ -256,3 +256,12 @@ Format: date · goal · what changed · decisions (ADR links) · open threads.
   (41 total); ADR-0038 *Second review*; plan §2.1.
 - **Found:** the old p99 threshold 1,522 has only 94.05 % exact coverage, p95 = 457 dips below 95 % before 484, and Kish
   alone labels slow-burst windows whose true coverage is 82–85 %.
+
+## 2026-10-24 · Dashboard step 2: admin listener and API
+- **Changed:** admin listener on `config.admin` only with `ADMIN_TOKEN` (≥ 32 chars, SHA-256 + timingSafeEqual); one auth
+  hook for every request; five `/admin/api/*` endpoints from the shared contracts; StatsWindow fed from every metrics call
+  site (allocated only with the admin listener); attempt callback carries the route id; 24 socket tests; 6 mutations
+  (47 total); ADR-0039.
+- **Found:** `retryRate` can exceed 1 (retries per upstream-reaching request), so the schema's [0, 1] bound was wrong;
+  the abort path never counted retries in Prometheus.
+- **Next:** step 3, static UI serving and security headers.

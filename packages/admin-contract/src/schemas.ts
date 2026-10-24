@@ -66,7 +66,8 @@ export const routeRatesSchema = z.strictObject({
   cacheBypassRate: rate,
   cacheStoreRate: rate,
   upstreamFailureRate: rate,
-  retryRate: rate,
+  /** Retries per request that reached the upstream: up to maxAttempts − 1, so not a ratio in [0, 1]. */
+  retryRate: z.number().min(0).nullable(),
 });
 
 export const upstreamCountersSchema = z.strictObject({ attempts: attemptsSchema, retries: count });

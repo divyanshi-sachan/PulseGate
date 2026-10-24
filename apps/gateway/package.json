@@ -20,6 +20,7 @@
     "start": "node dist/main.js"
   },
   "dependencies": {
+    "@pulsegate/admin-contract": "workspace:*",
     "@pulsegate/cache": "workspace:*",
     "@pulsegate/config": "workspace:*",
     "@pulsegate/observability": "workspace:*",

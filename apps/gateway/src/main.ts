@@ -35,10 +35,22 @@ try {
 }
 
 const redisUrl = process.env['REDIS_URL'];
-const gateway = createGateway(config, {
-  ...(clients === undefined ? {} : { clients }),
-  ...(redisUrl === undefined ? {} : { redisUrl }),
-});
+const adminToken = process.env['ADMIN_TOKEN'];
+let gateway: ReturnType<typeof createGateway>;
+try {
+  gateway = createGateway(config, {
+    ...(clients === undefined ? {} : { clients }),
+    ...(redisUrl === undefined ? {} : { redisUrl }),
+    ...(adminToken === undefined ? {} : { adminToken }),
+  });
+} catch (error) {
+  // e.g. an ADMIN_TOKEN shorter than 32 characters (ADR-0020); the message never contains the token.
+  if (error instanceof ConfigError) {
+    console.error(error.message);
+    process.exit(1);
+  }
+  throw error;
+}
 try {
   await gateway.start();
 } catch (error) {
