@@ -1,0 +1,84 @@
+# k6 performance suite, local rate limiting (docs/plans/real-data-testing.md §3, ADR-0046). Mocks only.
+# Pinned: its SHA-256 is recorded in every benchmark report. The admin listener is on (as with the dashboard), so the
+# stats window's per-request recording is part of what is measured.
+
+admin:
+  host: '0.0.0.0'
+  port: 9090
+
+upstreams:
+  - id: orders-service
+    baseUrl: 'http://orders-mock:4001'
+  # K7 only: its own breaker.
+  - id: flaky-service
+    baseUrl: 'http://payments-mock:4002'
+    circuitBreaker: { failureThreshold: 5, openDurationMs: 2000 }
+
+routes:
+  # K1 steady, K3 public share, K9 saturation: no auth, no cache, no retries; the mandatory limiter check runs with an
+  # effectively unlimited bucket.
+  - id: bench-plain
+    pathPrefix: '/bench/plain'
+    methods: ['GET']
+    upstreamId: orders-service
+    auth: { required: false }
+    rateLimit: { capacity: 10000000, refillRatePerSecond: 10000000 }
+
+  # K3 authenticated read.
+  - id: bench-auth
+    pathPrefix: '/bench/auth'
+    methods: ['GET']
+    upstreamId: orders-service
+    auth: { required: true }
+    rateLimit: { capacity: 10000000, refillRatePerSecond: 10000000 }
+
+  # K3 write (never cached, never retried).
+  - id: bench-write
+    pathPrefix: '/bench/write'
+    methods: ['POST']
+    upstreamId: orders-service
+    auth: { required: false }
+    rateLimit: { capacity: 10000000, refillRatePerSecond: 10000000 }
+
+  # K3 cached read, K4: shared scope, no vary headers, TTL longer than any run.
+  - id: bench-cached
+    pathPrefix: '/bench/cached'
+    methods: ['GET']
+    upstreamId: orders-service
+    auth: { required: false }
+    rateLimit: { capacity: 10000000, refillRatePerSecond: 10000000 }
+    cache: { enabled: true, ttlSeconds: 600, scope: 'shared' }
+
+  # K2 burst: one subject (the k6 container's IP), capacity 100, refill 50/s.
+  - id: bench-burst
+    pathPrefix: '/bench/burst'
+    methods: ['GET']
+    upstreamId: orders-service
+    auth: { required: false }
+    rateLimit: { capacity: 100, refillRatePerSecond: 50 }
+
+  # K5: per client key; C = 10, rho = 2/s (the expectation is derived from these in scripts/bench-report.ts).
+  - id: bench-limited
+    pathPrefix: '/bench/limited'
+    methods: ['GET']
+    upstreamId: orders-service
+    auth: { required: true }
+    rateLimit: { capacity: 10, refillRatePerSecond: 2 }
+
+  # K6: the upstream answers after 300 ms; the route allows 1 s.
+  - id: bench-slow
+    pathPrefix: '/bench/slow'
+    methods: ['GET']
+    upstreamId: orders-service
+    auth: { required: false }
+    rateLimit: { capacity: 10000000, refillRatePerSecond: 10000000 }
+    timeoutMs: 1000
+
+  # K7: 20 % of upstream answers fail (_failRate); up to 3 attempts; breaker on flaky-service.
+  - id: bench-flaky
+    pathPrefix: '/bench/flaky'
+    methods: ['GET']
+    upstreamId: flaky-service
+    auth: { required: false }
+    rateLimit: { capacity: 10000000, refillRatePerSecond: 10000000 }
+    retries: { maxAttempts: 3, baseDelayMs: 10, maxDelayMs: 50 }

@@ -45,6 +45,8 @@ jobs:
         run: docker compose -f docker-compose.yml -f docker-compose.distributed.yml up -d --build --wait
       - name: Shared budget across instances
         run: scripts/smoke-distributed.sh
+      - name: k6 scripts are valid (syntax and options only, no load; ADR-0046)
+        run: scripts/k6-inspect.sh
       - name: Logs on failure
         if: failure()
         run: docker compose -f docker-compose.yml -f docker-compose.distributed.yml logs --no-color

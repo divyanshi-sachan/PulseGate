@@ -67,6 +67,8 @@ These come straight from the specs; violating one requires an ADR first.
   anything unknown to `unmatched`/`unknown`/`other`. A new metric needs a row in ADR-0036's table.
   Never request IDs, keys, or raw URLs as labels.
 - **Benchmarks:** never publish or write a number that wasn't measured. Record hardware, versions, config, workload.
+  Numbers come only from `scripts/bench-report.ts` output of a full local run; quick/CI numbers are never published;
+  performance thresholds stay informational until repeatable baselines exist (ADR-0046).
 - **Scope discipline:** finish proxy → rate limiter → reliability before dashboard or distributed extras.
   Out of scope: K8s operator, service mesh, billing, ML, multi-region, SSO.
 
@@ -145,6 +147,8 @@ pnpm bundle:check     # after pnpm build: dashboard JS budget (initial ≤ 120 K
 pnpm dev:dashboard    # docker compose stack + admin listener on 127.0.0.1:9090 (local-only ADMIN_TOKEN, see README)
 pnpm test:e2e         # fresh Docker stack + cross-container admin check + Playwright, always torn down (also in CI)
 pnpm test:real        # opt-in: R1–R9 through the gateway against Postman Echo + httpbin, ≤ 30 requests (REAL_API_ONLY=echo|httpbin)
+pnpm bench            # opt-in k6 suite vs mocks (BENCH_PROFILE=quick|full, BENCH_ONLY=K4,K5); report from raw files only (ADR-0046)
+pnpm bench:inspect    # k6 script validation, no load (also in CI)
 scripts/smoke-distributed.sh      # with dev:distributed running: exactly 30/100 pass across 2 instances
 ```
 

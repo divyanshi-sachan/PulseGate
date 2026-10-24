@@ -1,0 +1,29 @@
+# k6 performance suite, Redis rate limiting across 2 instances (K8; docs/plans/real-data-testing.md §3, ADR-0046).
+admin:
+  host: '0.0.0.0'
+  port: 9090
+
+rateLimit:
+  mode: 'redis'
+  redisFailurePolicy: 'closed'
+
+upstreams:
+  - id: orders-service
+    baseUrl: 'http://orders-mock:4001'
+
+routes:
+  # K8 correctness: one subject (the k6 container's IP) shared by both instances; C = 20, rho = 4/s.
+  - id: bench-shared
+    pathPrefix: '/bench/shared'
+    methods: ['GET']
+    upstreamId: orders-service
+    auth: { required: false }
+    rateLimit: { capacity: 20, refillRatePerSecond: 4 }
+
+  # K8 throughput through the Redis limiter, 1 vs 2 instances.
+  - id: bench-redis-plain
+    pathPrefix: '/bench/plain'
+    methods: ['GET']
+    upstreamId: orders-service
+    auth: { required: false }
+    rateLimit: { capacity: 10000000, refillRatePerSecond: 10000000 }

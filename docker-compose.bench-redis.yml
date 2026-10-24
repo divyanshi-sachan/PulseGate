@@ -1,0 +1,20 @@
+# K8 (ADR-0046): Redis-backed limiting on 2 gateway instances, on top of docker-compose.yml +
+# docker-compose.distributed.yml + docker-compose.bench.yml. Started by scripts/bench.sh.
+
+x-bench-gateway: &bench-gateway
+  environment:
+    PULSEGATE_CLIENTS: /bench/clients.yaml
+    ADMIN_TOKEN: ${BENCH_ADMIN_TOKEN:?run scripts/bench.sh}
+    LOG_LEVEL: warn
+  volumes:
+    - ./config/routes.bench-redis.yaml:/config/routes.yaml:ro
+    - ${BENCH_RUN_DIR:?run scripts/bench.sh}/clients.yaml:/bench/clients.yaml:ro
+  cpus: 2
+  mem_limit: 512m
+
+services:
+  gateway: *bench-gateway
+  gateway-2: *bench-gateway
+  redis:
+    cpus: 1
+    mem_limit: 256m

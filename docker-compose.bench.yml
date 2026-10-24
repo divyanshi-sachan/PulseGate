@@ -1,0 +1,37 @@
+# k6 performance suite (ADR-0046), on top of docker-compose.yml. Started by scripts/bench.sh, which sets the
+# variables below; never run by hand without them. Fixed resource limits make runs comparable on one machine.
+
+x-k6: &k6
+  image: grafana/k6:2.3.0@sha256:9c2dee7f8ed74d317e4027c06a10f169b625638189de8d4555d0b3486a5aeb34
+  profiles: ['bench']
+  cpus: 2
+  mem_limit: 1g
+  volumes:
+    - ./benchmarks/k6:/scripts:ro
+    - ${BENCH_RUN_DIR:?run scripts/bench.sh}:/out
+  environment:
+    BENCH_PROFILE: ${BENCH_PROFILE:-quick}
+
+services:
+  gateway:
+    environment:
+      PULSEGATE_CLIENTS: /bench/clients.yaml
+      ADMIN_TOKEN: ${BENCH_ADMIN_TOKEN:?run scripts/bench.sh}
+      # Per-request info logs would dominate the measurement; warnings and errors are still logged.
+      LOG_LEVEL: warn
+    volumes:
+      - ./config/routes.bench.yaml:/config/routes.yaml:ro
+      - ${BENCH_RUN_DIR:?run scripts/bench.sh}/clients.yaml:/bench/clients.yaml:ro
+    cpus: 2
+    mem_limit: 512m
+
+  orders-mock:
+    cpus: 1
+    mem_limit: 256m
+
+  payments-mock:
+    cpus: 1
+    mem_limit: 256m
+
+  k6:
+    <<: *k6

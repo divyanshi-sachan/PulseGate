@@ -15,6 +15,8 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
  *   _contentLength=1   with _bytes, send Content-Length up front
  *
  * Any other request gets a JSON echo of what the upstream received. GET /healthz is a liveness probe.
+ * GET /_stats returns how many requests the mock has received, in total and per path (query excluded), so load tests
+ * can reconcile what reached the upstream (ADR-0046). Neither endpoint counts itself.
  */
 export interface MockOptions {
   /** Reported in every echo, e.g. "orders". */
@@ -27,6 +29,8 @@ const MAX_DELAY_MS = 60_000;
 /** Distinct `_key` counters kept for `_failTimes`; the least recently used is dropped beyond this. */
 export const MAX_FAIL_KEYS = 1000;
 const MAX_FAIL_TIMES = 1000;
+/** Distinct paths counted by /_stats; further new paths are counted in `total` and `otherPaths` only. */
+export const MAX_STAT_PATHS = 1000;
 const MAX_ECHO_BODY_BYTES = 64 * 1024;
 const MAX_STREAM_BYTES = 1024 * 1024 * 1024;
 const CHUNK = Buffer.alloc(16 * 1024, 'x');
@@ -110,9 +114,34 @@ class KeyCounter {
   }
 }
 
+/** Requests received, for GET /_stats. Bounded: at most MAX_STAT_PATHS distinct paths. */
+class RequestStats {
+  total = 0;
+  otherPaths = 0;
+  readonly byPath = new Map<string, number>();
+
+  record(rawUrl: string): void {
+    this.total++;
+    const path = rawUrl.split('?')[0] ?? rawUrl;
+    const seen = this.byPath.get(path);
+    if (seen !== undefined) this.byPath.set(path, seen + 1);
+    else if (this.byPath.size < MAX_STAT_PATHS) this.byPath.set(path, 1);
+    else this.otherPaths++;
+  }
+
+  toJSON() {
+    return {
+      total: this.total,
+      otherPaths: this.otherPaths,
+      byPath: Object.fromEntries(this.byPath),
+    };
+  }
+}
+
 export function createMockServer(options: MockOptions): Server & { failKeys: () => number } {
   const random = options.random ?? Math.random;
   const counter = new KeyCounter();
+  const stats = new RequestStats();
 
   const server = createServer((req, res) => {
     void (async () => {
@@ -123,6 +152,11 @@ export function createMockServer(options: MockOptions): Server & { failKeys: () 
         sendJson(res, 200, { status: 'ok', service: options.name });
         return;
       }
+      if (req.method === 'GET' && rawUrl === '/_stats') {
+        sendJson(res, 200, { service: options.name, ...stats.toJSON() });
+        return;
+      }
+      stats.record(rawUrl);
 
       const body = await readBody(req);
       const delay = intParam(params, '_delay', 0, MAX_DELAY_MS) ?? 0;

@@ -2,7 +2,7 @@ import { once } from 'node:events';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
-import { createMockServer, MAX_FAIL_KEYS, type MockOptions } from './index.ts';
+import { createMockServer, MAX_FAIL_KEYS, MAX_STAT_PATHS, type MockOptions } from './index.ts';
 
 let server: (Server & { failKeys: () => number }) | undefined;
 afterEach(async () => {
@@ -111,5 +111,34 @@ describe('mock upstream', () => {
       await fetch(`${base}/x?_failTimes=1&_key=k${String(i)}`);
     }
     expect(server?.failKeys()).toBe(MAX_FAIL_KEYS);
+  });
+
+  it('counts received requests per path for load-test reconciliation, excluding itself and /healthz', async () => {
+    const base = await start();
+    await fetch(`${base}/a?x=1`);
+    await fetch(`${base}/a?x=2`);
+    await fetch(`${base}/b`, { method: 'POST', body: 'x' });
+    await fetch(`${base}/healthz`);
+    await fetch(`${base}/_stats`);
+    const stats: unknown = await (await fetch(`${base}/_stats`)).json();
+    expect(stats).toEqual({
+      service: 'orders',
+      total: 3,
+      otherPaths: 0,
+      byPath: { '/a': 2, '/b': 1 },
+    });
+  });
+
+  it('keeps the per-path table bounded', async () => {
+    const base = await start();
+    for (let i = 0; i < MAX_STAT_PATHS + 5; i++) await fetch(`${base}/p${String(i)}`);
+    const stats = (await (await fetch(`${base}/_stats`)).json()) as {
+      total: number;
+      otherPaths: number;
+      byPath: Record<string, number>;
+    };
+    expect(stats.total).toBe(MAX_STAT_PATHS + 5);
+    expect(stats.otherPaths).toBe(5);
+    expect(Object.keys(stats.byPath)).toHaveLength(MAX_STAT_PATHS);
   });
 });

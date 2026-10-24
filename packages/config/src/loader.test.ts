@@ -99,6 +99,31 @@ describe('loadConfigFile', () => {
     });
   });
 
+  it('loads the pinned k6 bench configs (ADR-0046)', async () => {
+    const local = await loadConfigFile(
+      fileURLToPath(new URL('../../../config/routes.bench.yaml', import.meta.url)),
+    );
+    expect(local.rateLimit.mode).toBe('local');
+    expect(local.routes.find((r) => r.id === 'bench-limited')?.rateLimit).toEqual({
+      capacity: 10,
+      refillRatePerSecond: 2,
+    });
+    expect(local.routes.find((r) => r.id === 'bench-cached')?.cache).toMatchObject({
+      enabled: true,
+      ttlSeconds: 600,
+      scope: 'shared',
+      varyHeaders: [],
+    });
+    const redis = await loadConfigFile(
+      fileURLToPath(new URL('../../../config/routes.bench-redis.yaml', import.meta.url)),
+    );
+    expect(redis.rateLimit).toMatchObject({ mode: 'redis', redisFailurePolicy: 'closed' });
+    expect(redis.routes.find((r) => r.id === 'bench-shared')?.rateLimit).toEqual({
+      capacity: 20,
+      refillRatePerSecond: 4,
+    });
+  });
+
   it('loads YAML and JSON files', async () => {
     const yamlPath = join(dir, 'gateway.yml');
     const jsonPath = join(dir, 'gateway.json');

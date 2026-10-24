@@ -1,0 +1,47 @@
+# k6 performance suite against the mock upstreams (ADR-0046): opt-in only, never on push or pull request.
+# Shared runners are noisy: the report is labelled "CI runner", its numbers are not comparable and never committed.
+# Correctness gates (reconciliations, derived rate-limit intervals) still pass or fail the job.
+name: Benchmarks
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: 'quick (minutes) or full (about 25 minutes)'
+        required: true
+        default: quick
+        type: choice
+        options: [quick, full]
+      only:
+        description: 'Optional subset, e.g. K4,K5 (empty = all)'
+        required: false
+        default: ''
+
+concurrency:
+  group: bench
+  cancel-in-progress: false
+
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26.4.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: k6 suite (mocks only)
+        run: pnpm bench
+        env:
+          BENCH_PROFILE: ${{ inputs.profile }}
+          BENCH_ONLY: ${{ inputs.only }}
+      - name: Raw results and report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-${{ inputs.profile }}-${{ github.run_id }}
+          path: benchmarks/reports/raw/
+          retention-days: 30

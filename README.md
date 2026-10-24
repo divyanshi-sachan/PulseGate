@@ -84,6 +84,7 @@ pnpm --filter @pulsegate/gateway dev         # runs from TypeScript source
 pnpm --filter @pulsegate/dashboard dev       # dashboard on Vite, proxying /admin/api to a gateway on :9090
 pnpm test:e2e                                # Docker stack + Playwright (first: pnpm exec playwright install chromium)
 pnpm test:real                               # opt-in: correctness against real public APIs (≤ 30 requests per run)
+pnpm bench                                   # opt-in k6 suite against the mocks (BENCH_PROFILE=quick|full)
 ```
 
 Configuration is validated at startup; every option and default is documented in

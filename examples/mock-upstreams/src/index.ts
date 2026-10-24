@@ -1,1 +1,1 @@
-export { createMockServer, MAX_FAIL_KEYS, type MockOptions } from './server.ts';
+export { createMockServer, MAX_FAIL_KEYS, MAX_STAT_PATHS, type MockOptions } from './server.ts';

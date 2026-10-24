@@ -335,3 +335,15 @@ Format: date · goal · what changed · decisions (ADR links) · open threads.
   R2b adds a control-backed `X-API-Key` check. A workflow bug (empty input excluding both providers) was fixed before
   shipping.
 - **Next:** step 3, the k6 suite against the mocks.
+
+## 2026-10-24 · Real-data testing, step 3: k6 suite against the mocks
+- **Changed:** k6 2.3.0 pinned by digest; `docker-compose.bench.yml`/`bench-redis.yml` (fixed limits, k6 on the Compose
+  network); pinned bench configs + loader tests; scenarios K0–K9; `scripts/bench.sh` (snapshots, `docker stats`
+  sampling, raw gzipped k6 output); `bench-keys.ts`, `bench-meta.ts`; `bench-report.ts` (reconciliation gates, derived
+  K5/K8 intervals, refuses missing values; 16 tests); mock `GET /_stats`; `k6-inspect.sh` in CI; `bench.yml`
+  (manual dispatch); 3 mutations (72 total); ADR-0046.
+- **Ran:** quick profile twice, all 13 scenarios: 84/84 gates each; k6 inspect 18/18; `pnpm check` 543 passed;
+  mutations 72/72.
+- **Found:** achieved-rate undercount for variable-length scenarios (fixed); quick-profile tail latencies unstable (by
+  design not published).
+- **Next:** step 4, a full-profile run on this Mac with the committed report.

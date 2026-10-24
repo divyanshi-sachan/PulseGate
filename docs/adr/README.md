@@ -50,3 +50,4 @@ Accepted ADRs **override** the spec documents where they conflict. Create new on
 | [0043](0043-dashboard-docker-e2e-ci.md) | Dashboard in Docker, Playwright end to end, CI (dashboard step 6) | Accepted (review details) |
 | [0044](0044-deterministic-fault-scenarios.md) | Deterministic fault scenarios in Docker (real-data testing, step 1) | Accepted |
 | [0045](0045-real-public-api-smoke-tests.md) | Real public API smoke tests (real-data testing, step 2) | Accepted |
+| [0046](0046-k6-performance-suite.md) | k6 performance suite against the mock upstreams (real-data testing, step 3) | Accepted |

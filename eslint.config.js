@@ -29,5 +29,12 @@ export default defineConfig(
     files: ['**/*.js'],
     extends: [tseslint.configs.disableTypeChecked],
   },
+  {
+    // k6 scripts run in k6's JavaScript runtime, not Node (ADR-0046).
+    files: ['benchmarks/k6/**/*.js'],
+    languageOptions: {
+      globals: { __ENV: 'readonly', __VU: 'readonly', __ITER: 'readonly', open: 'readonly' },
+    },
+  },
   prettier,
 );
