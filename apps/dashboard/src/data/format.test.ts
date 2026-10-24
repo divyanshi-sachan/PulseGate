@@ -55,3 +55,19 @@ describe('formatting (plan §4: units on every number, null never shown as 0)', 
     expect(formatClock(Date.UTC(2026, 9, 24, 13, 5, 9), 'UTC')).toBe('13:05:09');
   });
 });
+
+describe('bytes and durations', () => {
+  it('formats binary sizes', async () => {
+    const { formatBytes } = await import('./format.ts');
+    expect(formatBytes(null)).toBe('—');
+    expect(formatBytes(512)).toBe('512 B');
+    expect(formatBytes(2048)).toBe('2.0 KiB');
+    expect(formatBytes(67_108_864)).toBe('64 MiB');
+  });
+
+  it('formats elapsed time', async () => {
+    const { formatAgo } = await import('./format.ts');
+    expect(formatAgo(42_400)).toBe('42 s');
+    expect(formatAgo(240_000)).toBe('4 min');
+  });
+});

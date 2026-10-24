@@ -1,9 +1,10 @@
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
+import { UI_BASE } from './src/app/base.ts';
 
 // Served by the gateway's admin listener at /admin/ui/ (ADR-0037, ADR-0040).
 export default defineConfig({
-  base: '/admin/ui/',
+  base: UI_BASE,
   plugins: [react()],
   resolve: {
     // Workspace packages are bundled from their TypeScript source (ADR-0025).

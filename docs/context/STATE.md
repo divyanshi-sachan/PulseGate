@@ -41,7 +41,7 @@ the React dashboard (ADR-0035), then **Phase 6 — release and benchmarks**.
 2. ~~Admin listener (ADR-0020), auth, `/admin/api/*` endpoints + socket tests~~ **done** (ADR-0039).
 3. ~~Static UI serving + security headers~~ **done** (ADR-0040).
 4. ~~`apps/dashboard` scaffold, tokens, API client, token gate, bundle budget~~ **done** (ADR-0041; Recharts comes with step 5).
-5. Charts + `chart-data` + screens + component/contract tests; re-measure the bundle.
+5. ~~Charts + `chart-data` + screens + component/contract tests; re-measure the bundle~~ **done** (ADR-0042: 94.6 / 203.9 KB gz, Recharts kept).
 6. Compose dashboard override + Playwright e2e + CI + Docker verification + docs.
 
 Exit criteria: dashboard data matches the gateway's observed behavior in integration tests.

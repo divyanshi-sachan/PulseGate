@@ -98,7 +98,7 @@ Clients file (`PULSEGATE_CLIENTS`, example `config/clients.example.yaml`) holds 
 Unit tests sit next to code in `src/`; socket-level integration tests with mock upstreams in `apps/gateway/test/`.
 `apps/dashboard` (React 19 + Vite 8, browser code: own tsconfig, jsdom Vitest project, react-hooks lint; validates
 every API response with `@pulsegate/admin-contract`; tokens in `src/design/tokens.css`; strict CSP, so no inline
-scripts or styles; ADR-0041).
+scripts or styles; data shaping only in `src/data/`, colours only via CSS classes; polling via `usePoll`; ADR-0041, 0042).
 `examples/mock-upstreams` (dev/demo upstream with `_delay`/`_status`/`_reset`/`_bytes`/`_failRate` query faults).
 Docker: one multi-stage `Dockerfile` (targets `gateway`, `mock-upstreams`); Compose mounts `config/routes.example.yaml`.
 When changing config: update schema, ADR-0026, the example YAML and the defaults test together.

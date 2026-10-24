@@ -13,6 +13,8 @@
     "@pulsegate/admin-contract": "workspace:*",
     "react": "19.3.1",
     "react-dom": "19.3.1",
+    "react-is": "19.3.1",
+    "recharts": "3.10.1",
     "zod": "4.6.7"
   },
   "devDependencies": {

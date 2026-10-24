@@ -1,70 +1,94 @@
 import { useCallback } from 'react';
-import type { AdminApi } from '../api/client.ts';
-import { useResource } from '../api/use-resource.ts';
-import { ScreenSkeleton } from '../app/ScreenSkeleton.tsx';
-import { formatClock, formatCount, formatMs, formatPercent, formatRps } from '../data/format.ts';
-import './overview.css';
+import { usePoll } from '../api/use-poll.ts';
+import { confidenceNote, Kpi } from '../app/Kpi.tsx';
+import { EmptyState, ScreenFrame } from '../app/ScreenFrame.tsx';
+import { TimeSeriesChart } from '../charts/TimeSeriesChart.tsx';
+import {
+  ERROR_SERIES,
+  isQuiet,
+  LATENCY_SERIES,
+  latencyPoints,
+  routeErrorPoints,
+  routeRps,
+} from '../data/chart-data.ts';
+import { formatCount, formatMs, formatPercent, formatRps } from '../data/format.ts';
+import type { ScreenProps } from './types.ts';
 
-export interface OverviewProps {
-  api: AdminApi;
-  onUnauthorized: () => void;
-}
+const RPS_SERIES = [{ key: 'rps', label: 'Requests', className: 'pg-series--primary' }] as const;
 
-/**
- * Overview (step 4 scaffold): window KPIs from /admin/api/stats. Trend charts, polling and the remaining screens
- * arrive in step 5.
- */
-export default function Overview({ api, onUnauthorized }: OverviewProps) {
+/** Overview (plan §6): window KPIs and the total's latency, throughput and error trends. */
+export default function Overview({ api, onUnauthorized }: ScreenProps) {
   const load = useCallback((signal: AbortSignal) => api.stats(signal), [api]);
-  const stats = useResource(load, onUnauthorized);
-
-  if (stats.status === 'loading') return <ScreenSkeleton />;
-  if (stats.status === 'error') {
-    return (
-      <div className="pg-banner pg-banner--danger" role="alert">
-        {stats.error.kind === 'unreachable'
-          ? 'The admin API could not be reached.'
-          : `Could not load statistics: ${stats.error.message}`}
-      </div>
-    );
-  }
-
-  const { window: window5m } = stats.data.total;
-  const p95 = window5m.latency.p95;
+  const poll = usePoll(load, onUnauthorized);
   return (
-    <section className="pg-overview" aria-labelledby="overview-title">
-      <div>
-        <h1 id="overview-title" className="pg-overview__title">
-          Overview
-        </h1>
-        <p className="pg-hint">
-          Last 5 minutes on instance <span className="pg-mono">{stats.data.instance.id}</span>,
-          updated {formatClock(stats.data.generatedAt)}
-        </p>
-      </div>
-      <dl className="pg-kpis">
-        <div className="pg-card pg-kpi">
-          <dt>Requests</dt>
-          <dd data-testid="kpi-requests">{formatCount(window5m.counters.requests)}</dd>
-        </div>
-        <div className="pg-card pg-kpi">
-          <dt>Throughput</dt>
-          <dd data-testid="kpi-rps">{formatRps(window5m.rates.rps)}</dd>
-        </div>
-        <div className="pg-card pg-kpi">
-          <dt>Server error rate</dt>
-          <dd data-testid="kpi-error-rate">{formatPercent(window5m.rates.errorRate)}</dd>
-        </div>
-        <div className="pg-card pg-kpi">
-          <dt>p95 latency</dt>
-          <dd data-testid="kpi-p95">{formatMs(p95.value)}</dd>
-          {p95.value !== null && p95.confidence !== 'adequate' && (
-            <span className="pg-kpi__note">
-              {p95.confidence} confidence, n={formatCount(p95.effectiveSamples)}
-            </span>
-          )}
-        </div>
-      </dl>
-    </section>
+    <ScreenFrame title="Overview" poll={poll} envelope={(d) => d}>
+      {(stats) => {
+        const { window: w, buckets } = stats.total;
+        return (
+          <>
+            <dl className="pg-kpis">
+              <Kpi
+                label="Requests"
+                value={formatCount(w.counters.requests)}
+                testId="kpi-requests"
+              />
+              <Kpi label="Throughput" value={formatRps(w.rates.rps)} testId="kpi-rps" />
+              <Kpi
+                label="Success rate"
+                value={formatPercent(w.rates.successRate)}
+                testId="kpi-success-rate"
+              />
+              <Kpi
+                label="Server error rate"
+                value={formatPercent(w.rates.errorRate)}
+                testId="kpi-error-rate"
+              />
+              <Kpi
+                label="p95 latency"
+                value={formatMs(w.latency.p95.value)}
+                note={confidenceNote(w.latency.p95)}
+                testId="kpi-p95"
+              />
+              <Kpi
+                label="p99 latency"
+                value={formatMs(w.latency.p99.value)}
+                note={confidenceNote(w.latency.p99)}
+                testId="kpi-p99"
+              />
+            </dl>
+            {isQuiet(stats.total) ? (
+              <EmptyState title="No traffic in the last 5 minutes">
+                Send requests through the gateway&apos;s public port (8080 by default); they appear
+                here within 5 seconds.
+              </EmptyState>
+            ) : (
+              <div className="pg-chart-grid">
+                <TimeSeriesChart
+                  title="Latency"
+                  description="p50, p95 and p99 per 10-second interval, in milliseconds"
+                  points={latencyPoints(buckets)}
+                  series={LATENCY_SERIES}
+                  unit="ms"
+                />
+                <TimeSeriesChart
+                  title="Throughput"
+                  description="Completed requests per second"
+                  points={routeRps(buckets)}
+                  series={RPS_SERIES}
+                  unit="req/s"
+                />
+                <TimeSeriesChart
+                  title="Error rate"
+                  description="Share of completed requests answered with 5xx and 4xx"
+                  points={routeErrorPoints(buckets)}
+                  series={ERROR_SERIES}
+                  unit="%"
+                />
+              </div>
+            )}
+          </>
+        );
+      }}
+    </ScreenFrame>
   );
 }

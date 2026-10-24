@@ -1,0 +1,210 @@
+/* Chart and data-display styles. Colours come from tokens; series are told apart by colour and dash pattern. */
+.pg-chart {
+  display: grid;
+  gap: var(--pg-space-3);
+  margin: 0;
+  padding: var(--pg-space-4);
+  min-width: 0;
+}
+
+.pg-chart__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--pg-space-3);
+}
+
+.pg-chart__title {
+  font-size: var(--pg-text-md);
+  font-weight: var(--pg-weight-semibold);
+}
+
+.pg-chart__plot {
+  min-width: 0;
+}
+
+.pg-chart__grid line {
+  stroke: var(--pg-gridline);
+}
+
+.pg-chart__axis text {
+  fill: var(--pg-text-subtle);
+  font-size: var(--pg-text-xs);
+}
+
+.pg-chart__axis line,
+.pg-chart__axis path {
+  stroke: var(--pg-border);
+}
+
+.pg-chart__cursor {
+  stroke: var(--pg-border-strong);
+}
+
+/* Series: one custom property per class, used by lines, dots and swatches alike. */
+.pg-series--p50 {
+  --pg-series-color: var(--pg-series-p50);
+  --pg-series-dash: none;
+}
+.pg-series--p95 {
+  --pg-series-color: var(--pg-series-p95);
+  --pg-series-dash: 6 3;
+}
+.pg-series--p99 {
+  --pg-series-color: var(--pg-series-p99);
+  --pg-series-dash: 2 3;
+}
+.pg-series--primary {
+  --pg-series-color: var(--pg-series-1);
+  --pg-series-dash: none;
+}
+.pg-series--danger {
+  --pg-series-color: var(--pg-danger);
+  --pg-series-dash: none;
+}
+.pg-series--warning {
+  --pg-series-color: var(--pg-warning);
+  --pg-series-dash: 6 3;
+}
+.pg-series--success {
+  --pg-series-color: var(--pg-success);
+  --pg-series-dash: none;
+}
+
+.recharts-line .recharts-line-curve {
+  fill: none;
+  stroke: var(--pg-series-color);
+  stroke-dasharray: var(--pg-series-dash);
+}
+
+.pg-chart__dot,
+.pg-chart__active-dot {
+  fill: var(--pg-series-color);
+  stroke: var(--pg-surface-card);
+}
+
+.pg-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--pg-space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--pg-text-muted);
+  font-size: var(--pg-text-sm);
+}
+
+.pg-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pg-space-1);
+}
+
+.pg-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: var(--pg-series-color);
+}
+
+.pg-swatch--line {
+  width: 16px;
+  height: 0;
+  border-radius: 0;
+  background: none;
+  border-top: 2px solid var(--pg-series-color);
+}
+
+.pg-series--p95.pg-swatch--line,
+.pg-series--warning.pg-swatch--line {
+  border-top-style: dashed;
+}
+
+.pg-series--p99.pg-swatch--line {
+  border-top-style: dotted;
+}
+
+.pg-tooltip {
+  min-width: 200px;
+  padding: var(--pg-space-3);
+  background: var(--pg-surface-card);
+  border: 1px solid var(--pg-border);
+  border-radius: var(--pg-radius-md);
+  box-shadow: var(--pg-shadow-raised);
+  font-size: var(--pg-text-sm);
+}
+
+.pg-tooltip__time {
+  margin-bottom: var(--pg-space-2);
+  color: var(--pg-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.pg-tooltip__values,
+.pg-tooltip__notes {
+  display: grid;
+  gap: var(--pg-space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pg-tooltip__values li {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: var(--pg-space-2);
+}
+
+.pg-tooltip__value {
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--pg-weight-medium);
+}
+
+.pg-tooltip__notes {
+  margin-top: var(--pg-space-2);
+  color: var(--pg-text-subtle);
+  font-size: var(--pg-text-xs);
+}
+
+.pg-sparkline path {
+  fill: none;
+  stroke: var(--pg-series-1);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.pg-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pg-space-1);
+  padding: 2px var(--pg-space-2);
+  border-radius: var(--pg-radius-pill);
+  font-size: var(--pg-text-xs);
+  font-weight: var(--pg-weight-semibold);
+  white-space: nowrap;
+}
+
+.pg-badge--success {
+  background: var(--pg-success-surface);
+  color: var(--pg-success);
+}
+.pg-badge--warning {
+  background: var(--pg-warning-surface);
+  color: var(--pg-warning);
+}
+.pg-badge--danger {
+  background: var(--pg-danger-surface);
+  color: var(--pg-danger);
+}
+.pg-badge--info {
+  background: var(--pg-info-surface);
+  color: var(--pg-info);
+}
+.pg-badge--neutral {
+  background: var(--pg-gray-100);
+  color: var(--pg-text-muted);
+}

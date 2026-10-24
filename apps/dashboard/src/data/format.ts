@@ -61,3 +61,23 @@ export function formatClock(epochMs: number, timeZone?: string): string {
         timeZone,
       }).format(epochMs);
 }
+
+const BYTE_UNITS = ['B', 'KiB', 'MiB', 'GiB'] as const;
+
+/** Binary byte sizes (the cache limits are configured in bytes). */
+export function formatBytes(value: number | null): string {
+  if (value === null) return MISSING;
+  let n = value;
+  let unit = 0;
+  while (n >= 1024 && unit < BYTE_UNITS.length - 1) {
+    n /= 1024;
+    unit++;
+  }
+  return `${unit === 0 ? String(n) : n.toFixed(n < 10 ? 1 : 0)} ${BYTE_UNITS[unit] ?? 'B'}`;
+}
+
+/** Duration in whole seconds or minutes, e.g. for "started 42 s ago". */
+export function formatAgo(ms: number): string {
+  const seconds = Math.max(0, Math.round(ms / 1000));
+  return seconds < 120 ? `${String(seconds)} s` : `${String(Math.round(seconds / 60))} min`;
+}

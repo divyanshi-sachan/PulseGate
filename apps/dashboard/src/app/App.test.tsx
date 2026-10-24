@@ -1,9 +1,16 @@
-import { render, screen } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { ApiError, type AdminApi } from '../api/client.ts';
 import { createTokenStore, TOKEN_KEY } from '../auth/token-store.ts';
-import { statsFixture, TOKEN } from '../test/fixtures.ts';
+import {
+  cacheOf,
+  fakeApi,
+  statsFixture,
+  TOKEN,
+  trafficWindow,
+  upstreamsOf,
+} from '../test/fixtures.ts';
 import { App, SESSION_EXPIRED } from './App.tsx';
 
 function api(stats: AdminApi['stats']): AdminApi {
@@ -30,8 +37,8 @@ describe('app shell', () => {
     expect((await screen.findByTestId('kpi-requests')).textContent).toBe('2');
     expect(screen.getByTestId('kpi-error-rate').textContent).toBe('50 %');
     expect(screen.getByText('gw_fixture')).toBeDefined();
-    // Two samples: shown, but marked as low confidence with n.
-    expect(screen.getByText(/low confidence, n=2/)).toBeDefined();
+    // p95 and p99 tiles: shown, but marked low confidence with n.
+    expect(screen.getAllByText(/low confidence, n=2/)).toHaveLength(2);
   });
 
   it('goes back to the gate with a notice when the stored token is rejected, and forgets it', async () => {
@@ -77,5 +84,47 @@ describe('app shell', () => {
     await userEvent.type(screen.getByLabelText('Admin token'), `${TOKEN}{Enter}`);
     expect(await screen.findByTestId('kpi-requests')).toBeDefined();
     expect(window.sessionStorage.getItem(TOKEN_KEY)).toBe(TOKEN);
+  });
+
+  it('navigates between screens with real URLs, and back', async () => {
+    const store = createTokenStore();
+    store.set(TOKEN);
+    const { window: w } = trafficWindow();
+    const connect = () =>
+      fakeApi({
+        stats: () => Promise.resolve(statsFixture()),
+        upstreams: () =>
+          Promise.resolve(upstreamsOf(w, { state: 'closed', consecutiveFailures: 0 })),
+      });
+    render(<App store={store} connect={connect} />);
+    await screen.findByTestId('kpi-requests');
+    const nav = screen.getByRole('navigation', { name: 'Screens' });
+    expect(within(nav).getByRole('link', { name: 'Overview' }).getAttribute('aria-current')).toBe(
+      'page',
+    );
+    await userEvent.click(within(nav).getByRole('link', { name: 'Upstreams' }));
+    expect(window.location.pathname).toBe('/admin/ui/upstreams');
+    expect(await screen.findByTestId('breaker-orders-service')).toBeDefined();
+    expect(within(nav).getByRole('link', { name: 'Upstreams' }).getAttribute('aria-current')).toBe(
+      'page',
+    );
+    act(() => {
+      window.history.back();
+    });
+    await waitFor(() => {
+      expect(window.location.pathname).toBe('/admin/ui/');
+    });
+    expect(await screen.findByTestId('kpi-requests')).toBeDefined();
+  });
+
+  it('opens the screen named in the URL', async () => {
+    window.history.replaceState(null, '', '/admin/ui/cache');
+    const store = createTokenStore();
+    store.set(TOKEN);
+    const { window: w } = trafficWindow();
+    render(
+      <App store={store} connect={() => fakeApi({ cache: () => Promise.resolve(cacheOf(w)) })} />,
+    );
+    expect(await screen.findByRole('heading', { name: 'Cache', level: 1 })).toBeDefined();
   });
 });

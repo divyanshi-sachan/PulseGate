@@ -46,3 +46,4 @@ Accepted ADRs **override** the spec documents where they conflict. Create new on
 | [0039](0039-admin-listener-implementation.md) | Admin listener and API (dashboard step 2) | Accepted (review details) |
 | [0040](0040-admin-ui-static-serving.md) | Admin UI static serving and security headers (dashboard step 3) | Accepted (review details) |
 | [0041](0041-dashboard-scaffold.md) | Dashboard scaffold, tooling, API client and token gate (dashboard step 4) | Accepted (review details) |
+| [0042](0042-dashboard-charts-and-screens.md) | Dashboard charts, screens and polling; Recharts confirmed by measurement (dashboard step 5) | Accepted (review details) |

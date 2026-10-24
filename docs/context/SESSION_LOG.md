@@ -283,3 +283,13 @@ Format: date · goal · what changed · decisions (ADR links) · open threads.
 - **Measured:** initial 93.6 KB gz / 120, total 94.8 KB / 260; Zod + contract ≈ 27 KB of the initial load. The built UI
   ran under the gateway's strict CSP in a real browser with no console errors.
 - **Next:** step 5, charts (Recharts, lazy) + chart-data + screens + polling/staleness; re-measure the bundle.
+
+## 2026-10-24 · Dashboard step 5: charts, screens, polling
+- **Changed:** Recharts 3.10.1 (lazy chunk); `chart-data` (gaps, partial/low-confidence notes, denominators); reusable
+  `TimeSeriesChart` (figure + hidden table, CSS-class colours with dash patterns, isolated-point dots); SVG sparklines;
+  `usePoll` (5 s, no overlap, interval-bounded, pause/resume/refresh, stale after 2 misses, 401 → gate); `ScreenFrame`
+  states; five screens; History-API navigation with real URLs; 44 new tests (88 dashboard); 8 mutations (67 total);
+  ADR-0042. Removed the unused `use-resource.ts` (exposed by a surviving mutation).
+- **Measured:** initial 94.6 KB / 120, total 203.9 KB / 260 gz; Recharts kept (uPlot fallback not needed). Real-browser
+  run with plan §7's traffic: 40 % rejections, 80 % hits, faulty breaker Open; no CSP violations.
+- **Next:** step 6, Docker/Compose dashboard, Playwright e2e, CI jobs, Docker verification, docs.
