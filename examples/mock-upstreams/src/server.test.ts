@@ -126,6 +126,7 @@ describe('mock upstream', () => {
       total: 3,
       otherPaths: 0,
       byPath: { '/a': 2, '/b': 1 },
+      maxInFlight: { '/a': 1, '/b': 1 }, // sequential requests: never more than one at a time
     });
   });
 
@@ -140,5 +141,19 @@ describe('mock upstream', () => {
     expect(stats.total).toBe(MAX_STAT_PATHS + 5);
     expect(stats.otherPaths).toBe(5);
     expect(Object.keys(stats.byPath)).toHaveLength(MAX_STAT_PATHS);
+  });
+
+  it('records the peak number of concurrent requests per path', async () => {
+    const base = await start();
+    // 5 overlapping requests (each held 150 ms) on one path, then one more after they finished.
+    await Promise.all(
+      Array.from({ length: 5 }, () => fetch(`${base}/hot?_delay=150`).then((r) => r.text())),
+    );
+    await (await fetch(`${base}/hot`)).text();
+    await (await fetch(`${base}/cold`)).text();
+    const stats = (await (await fetch(`${base}/_stats`)).json()) as {
+      maxInFlight: Record<string, number>;
+    };
+    expect(stats.maxInFlight).toEqual({ '/hot': 5, '/cold': 1 });
   });
 });

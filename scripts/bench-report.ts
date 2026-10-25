@@ -151,11 +151,22 @@ export function acceptedInterval(
 
 export interface ResponsePoint {
   tags: Record<string, string>;
+  /** When k6 recorded the response, epoch ms. */
+  timeMs: number;
+}
+
+/** pg_duration: one per response, with its cache result (Q13: MISS vs HIT latency, burst start spread). */
+export interface DurationPoint {
+  tags: Record<string, string>;
+  timeMs: number;
+  durationMs: number;
 }
 
 export interface RawRun {
   /** pg_responses points (one per response) with their tags. */
   responses: ResponsePoint[];
+  /** pg_duration points (one per response). */
+  durations: DurationPoint[];
   /** http_req_duration samples per subject (K5/K8), for the derived intervals. */
   bySubject: Map<string, TimedResponse[]>;
   /** Per second of the measured phase: durations and server errors (K9). */
@@ -167,6 +178,7 @@ export interface RawRun {
 export async function readRaw(path: string): Promise<RawRun> {
   const run: RawRun = {
     responses: [],
+    durations: [],
     bySubject: new Map(),
     perSecond: new Map(),
     measureSpanMs: Number.NaN,
@@ -185,7 +197,13 @@ export async function readRaw(path: string): Promise<RawRun> {
     };
     const tags = point.data.tags ?? {};
     if (point.metric === 'pg_responses') {
-      run.responses.push({ tags });
+      run.responses.push({ tags, timeMs: Date.parse(point.data.time) });
+    } else if (point.metric === 'pg_duration') {
+      run.durations.push({
+        tags,
+        timeMs: Date.parse(point.data.time),
+        durationMs: point.data.value,
+      });
     } else if (point.metric === 'http_req_duration') {
       const endMs = Date.parse(point.data.time);
       const status = Number(tags['status'] ?? '0');
@@ -235,13 +253,20 @@ function equal(name: string, a: number, b: number, labelA: string, labelB: strin
   return gate(name, a === b, `${labelA} = ${String(a)}, ${labelB} = ${String(b)}`);
 }
 
+/** The mock's GET /_stats. `maxInFlight` is a lifetime peak per path (recorded since Q13). */
+export interface MockStats {
+  total: number;
+  byPath: Record<string, number>;
+  maxInFlight?: Record<string, number>;
+}
+
 interface Snapshots {
   metricsBefore: Sample[];
   metricsAfter: Sample[];
   metrics2Before: Sample[];
   metrics2After: Sample[];
-  ordersBefore: { total: number; byPath: Record<string, number> };
-  ordersAfter: { total: number; byPath: Record<string, number> };
+  ordersBefore: MockStats;
+  ordersAfter: MockStats;
   adminBefore: unknown;
   adminAfter: unknown;
 }
@@ -398,6 +423,8 @@ export interface ScenarioResult {
   eventLoopStallMs: { gateway: number; 'gateway-2'?: number };
   /** Fail-closed 503s (RATE_LIMITER_UNAVAILABLE) during the scenario, all instances. */
   limiterUnavailable: number;
+  /** Q13 herd/control measurements, for the decision rule. */
+  q13?: { medianPerRefill: number; refills: number; originPeakInFlight: number };
   gates: Gate[];
   details: string[];
 }
@@ -413,6 +440,7 @@ const TITLES: Record<string, string> = {
   k7: 'K7 failing upstream (20 % failures, retries, breaker)',
   k8: 'K8 Redis limiter, 2 instances',
   k9: 'K9 saturation ramp (informational)',
+  q13: 'Q13 cache stampede',
 };
 
 function titleOf(name: string, kind: string): string {
@@ -422,9 +450,46 @@ function titleOf(name: string, kind: string): string {
   return TITLES[kind] ?? name;
 }
 
+/** Scenario family from its name: k0…k9, or q13 for the stampede scenarios. */
+export function kindOf(name: string): string {
+  return name.startsWith('q13-') ? 'q13' : name.slice(0, 2);
+}
+
+/** Nearest-rank p50/p99 of the response durations with a given X-Cache result. */
+function cacheLatency(raw: RawRun, cache: string): { p50: number; p99: number; n: number } {
+  const sorted = raw.durations
+    .filter((d) => d.tags['cache'] === cache && d.tags['phase'] === 'measure')
+    .map((d) => d.durationMs)
+    .sort((a, b) => a - b);
+  return { p50: percentile(sorted, 0.5), p99: percentile(sorted, 0.99), n: sorted.length };
+}
+
+/** Clusters of MISS responses (one per refill): a new cluster starts after a gap longer than `gapMs`. */
+export function refillClusters(raw: RawRun, gapMs = 1000): number[] {
+  const times = raw.responses
+    .filter((r) => r.tags['cache'] === 'MISS')
+    .map((r) => r.timeMs)
+    .sort((a, b) => a - b);
+  const sizes: number[] = [];
+  let last = -Infinity;
+  for (const t of times) {
+    if (t - last > gapMs) sizes.push(0);
+    sizes[sizes.length - 1] = (sizes.at(-1) ?? 0) + 1;
+    last = t;
+  }
+  return sizes;
+}
+
+function stampedePath(s: ScenarioData): string | undefined {
+  return Object.keys(s.snap.ordersAfter.byPath).find(
+    (path) => path.startsWith('/bench/stampede/') && mockPathDelta(s, path) > 0,
+  );
+}
+
 export function evaluate(s: ScenarioData, measureSeconds: number): ScenarioResult {
-  const kind = s.name.slice(0, 2);
+  const kind = kindOf(s.name);
   const gates: Gate[] = [k6Exit(s)];
+  let q13: ScenarioResult['q13'];
   const details: string[] = [];
   const total = s.raw.responses.length;
   const serverErrors = s.raw.responses.filter(
@@ -675,6 +740,70 @@ export function evaluate(s: ScenarioData, measureSeconds: number): ScenarioResul
       );
       break;
     }
+    case 'q13': {
+      const path = stampedePath(s);
+      const misses = countResponses(s.raw, { cache: 'MISS' });
+      const mMiss = gatewayDelta(s, 'pulsegate_cache_requests_total', {
+        route: 'bench-stampede',
+        result: 'miss',
+      });
+      const upstream = path === undefined ? 0 : mockPathDelta(s, path);
+      const inFlight =
+        path === undefined ? Number.NaN : (s.snap.ordersAfter.maxInFlight?.[path] ?? Number.NaN);
+      gates.push(onlyStatuses(s, ['200']));
+      gates.push(...reconcileRequests(s, ['bench-stampede']));
+      gates.push(equal('k6 MISS = /metrics miss delta', misses, mMiss, 'k6', '/metrics'));
+      gates.push(equal('k6 MISS = upstream calls (mock /_stats)', misses, upstream, 'k6', 'mock'));
+      gates.push(
+        equal(
+          "no retries (retries can't add upstream calls)",
+          gatewayDelta(s, 'pulsegate_retries_total', { route: 'bench-stampede' }),
+          0,
+          '/metrics retries',
+          'expected',
+        ),
+      );
+      const miss = cacheLatency(s.raw, 'MISS');
+      const hit = cacheLatency(s.raw, 'HIT');
+      if (s.name.startsWith('q13-burst')) {
+        const n = Number(/-n(\d+)-/.exec(s.name)?.[1] ?? Number.NaN);
+        const starts = s.raw.durations.map((d) => d.timeMs - d.durationMs);
+        const spread = Math.max(...starts) - Math.min(...starts);
+        gates.push(
+          equal(
+            'upstream calls = N (no coalescing: every simultaneous request misses)',
+            upstream,
+            n,
+            'mock',
+            'N',
+          ),
+        );
+        gates.push(
+          gate(
+            'all N requests started within the 300 ms upstream delay (valid burst)',
+            spread < 300,
+            `start spread ${spread.toFixed(1)} ms`,
+          ),
+        );
+        details.push(
+          `burst of ${String(n)}: ${String(upstream)} upstream calls; origin peak in-flight ${String(inFlight)}${poolNote(inFlight)}; MISS latency p50/p99 ${miss.p50.toFixed(1)} / ${miss.p99.toFixed(1)} ms`,
+        );
+      } else {
+        const clusters = refillClusters(s.raw);
+        const sorted = [...clusters].sort((a, b) => a - b);
+        q13 = {
+          medianPerRefill: percentile(sorted, 0.5),
+          refills: clusters.length,
+          originPeakInFlight: inFlight,
+        };
+        details.push(
+          `refills (MISS clusters): ${String(clusters.length)}; upstream calls per refill median ${String(percentile(sorted, 0.5))}, ` +
+            `max ${String(sorted.at(-1) ?? Number.NaN)}; origin peak in-flight ${String(inFlight)}${poolNote(inFlight)}; ` +
+            `MISS p50/p99 ${miss.p50.toFixed(1)} / ${miss.p99.toFixed(1)} ms (n=${String(miss.n)}), HIT p50/p99 ${hit.p50.toFixed(1)} / ${hit.p99.toFixed(1)} ms`,
+        );
+      }
+      break;
+    }
     case 'k9': {
       details.push(describeSaturation(s.raw.perSecond));
       break;
@@ -698,7 +827,11 @@ export function evaluate(s: ScenarioData, measureSeconds: number): ScenarioResul
       count,
     },
     achievedRps:
-      kind === 'k5' || s.name === 'k8-shared' || kind === 'k2' || kind === 'k9'
+      kind === 'k5' ||
+      s.name === 'k8-shared' ||
+      kind === 'k2' ||
+      kind === 'k9' ||
+      s.name.startsWith('q13-burst')
         ? count / measureSecondsFor(s)
         : count / measureSeconds,
     dropped: summary0(s.summary, 'dropped_iterations{phase:measure}', 'count'),
@@ -715,6 +848,7 @@ export function evaluate(s: ScenarioData, measureSeconds: number): ScenarioResul
         : {}),
     },
     limiterUnavailable: gatewayDelta(s, 'pulsegate_rate_limiter_unavailable_total', {}),
+    ...(q13 === undefined ? {} : { q13 }),
     gates,
     details,
   };
@@ -787,6 +921,58 @@ export function describeSaturation(
   );
 }
 
+/** The gateway's default connection pool per upstream (`connectionsPerUpstream`, apps/gateway/src/proxy/upstream-registry.ts). */
+export const UPSTREAM_POOL_CONNECTIONS = 128;
+
+function poolNote(inFlight: number): string {
+  return inFlight >= UPSTREAM_POOL_CONNECTIONS
+    ? ` (capped by the gateway's ${String(UPSTREAM_POOL_CONNECTIONS)}-connection pool per upstream: further misses queue in the gateway and take an extra round trip, but still reach the upstream)`
+    : '';
+}
+
+/** Bench container memory limit for the gateway (docker-compose.bench.yml), for the Q13 memory criterion. */
+export const GATEWAY_MEMORY_LIMIT_BYTES = 512 * 1024 ** 2;
+
+export function q13Verdict(
+  herd: ScenarioResult,
+  control: ScenarioResult,
+): {
+  implement: boolean;
+  rows: { criterion: string; threshold: string; measured: string; met: boolean }[];
+} {
+  const amp = herd.q13?.medianPerRefill ?? Number.NaN;
+  const inFlight = herd.q13?.originPeakInFlight ?? Number.NaN;
+  const memDelta =
+    (herd.usage['gateway']?.memMaxBytes ?? Number.NaN) -
+    (control.usage['gateway']?.memMaxBytes ?? Number.NaN);
+  const memThreshold = 0.1 * GATEWAY_MEMORY_LIMIT_BYTES;
+  const rows = [
+    {
+      criterion: 'median upstream calls per refill (Q13-B)',
+      threshold: '≥ 10',
+      measured: num(amp, 0, 'q13 amplification'),
+      met: amp >= 10,
+    },
+    {
+      criterion: 'origin peak in-flight for the key (Q13-B)',
+      threshold: '≥ 10',
+      measured: num(inFlight, 0, 'q13 in-flight'),
+      met: inFlight >= 10,
+    },
+    {
+      criterion: 'gateway memory peak, Q13-B minus Q13-C',
+      threshold: '≥ 51.2 MiB (10 % of 512 MiB)',
+      measured: `${num(memDelta / 1024 ** 2, 1, 'q13 memory')} MiB`,
+      met: memDelta >= memThreshold,
+    },
+  ];
+  const [ampRow, inFlightRow, memRow] = rows;
+  return {
+    implement: ampRow?.met === true && (inFlightRow?.met === true || memRow?.met === true),
+    rows,
+  };
+}
+
 // ---- Rendering --------------------------------------------------------------------------------------------------
 
 export function table(header: string[], rows: string[][]): string {
@@ -846,6 +1032,10 @@ const OFFERED: Record<string, (name: string, profile: string) => string> = {
       ? '40 rps, one subject, alternating instances'
       : `${p === 'full' ? '500' : '100'} rps, ${n.startsWith('k8-tput-2') ? '2 instances' : '1 instance'}`,
   k9: () => '100 → 4,000 rps over 90 s',
+  q13: (n, p) =>
+    n.startsWith('q13-burst')
+      ? `${/-n(\d+)-/.exec(n)?.[1] ?? '?'} simultaneous requests, cold key, 300 ms upstream`
+      : `${p === 'full' ? '500' : '200'} rps, one hot key, TTL 2 s, ${n === 'q13-control' ? '1' : '300'} ms upstream`,
 };
 
 export function render(
@@ -977,6 +1167,31 @@ export function render(
   lines.push('');
 
   // K0 vs K1 overhead, only where both reached the offered rate.
+  // Q13: the decision rule fixed in docs/plans/q13-stampede.md §4, applied to the measured herd and control.
+  const herd = results.find((r) => r.name === 'q13-herd');
+  const control = results.find((r) => r.name === 'q13-control');
+  if (herd?.q13 !== undefined && control?.q13 !== undefined) {
+    lines.push('## Q13 decision rule (docs/plans/q13-stampede.md §4, fixed before measuring)');
+    lines.push('');
+    const verdict = q13Verdict(herd, control);
+    lines.push(
+      table(
+        ['criterion', 'threshold', 'measured', 'met'],
+        verdict.rows.map((row) => [
+          row.criterion,
+          row.threshold,
+          row.measured,
+          row.met ? 'yes' : 'no',
+        ]),
+      ),
+    );
+    lines.push('');
+    lines.push(
+      `**Rule outcome: ${verdict.implement ? 'implement request deduplication (own design and ADR first)' : 'not met: document and keep deferred'}.**`,
+    );
+    lines.push('');
+  }
+
   // Q15: event-loop stalls vs fail-closed limiter 503s, for every Redis throughput window (including repeats).
   const k8 = results.filter((r) => r.name.startsWith('k8-tput-'));
   if (k8.length > 0) {
@@ -1138,7 +1353,7 @@ export async function loadScenario(dir: string, name: string): Promise<ScenarioD
   };
 }
 
-const ORDER = ['k0', 'k1', 'k4', 'k2', 'k3', 'k5', 'k6', 'k7', 'k9', 'k8'];
+const ORDER = ['k0', 'k1', 'k4', 'k2', 'k3', 'k5', 'k6', 'k7', 'k9', 'q13', 'k8'];
 
 export async function generate(
   dir: string,
@@ -1151,14 +1366,14 @@ export async function generate(
     .map((f) => f.replace('.summary.json', ''))
     .sort(
       (a, b) =>
-        ORDER.indexOf(a.slice(0, 2)) - ORDER.indexOf(b.slice(0, 2)) ||
+        ORDER.indexOf(kindOf(a)) - ORDER.indexOf(kindOf(b)) ||
         a.localeCompare(b, 'en', { numeric: true }),
     );
   if (names.length === 0) throw new Error('no scenario summaries in the run directory');
   const results: ScenarioResult[] = [];
   for (const name of names) {
     const result = evaluate(await loadScenario(dir, name), measureSeconds);
-    result.offered = OFFERED[name.slice(0, 2)]?.(name, meta.profile) ?? '';
+    result.offered = OFFERED[kindOf(name)]?.(name, meta.profile) ?? '';
     results.push(result);
   }
   const checksums: Record<string, string> = {};

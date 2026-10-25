@@ -9,11 +9,9 @@ with the ADR link. `[blocks: X]` marks the phase or component that can't be fina
 - **Q14 — Version reference mismatch.** system_design_specification.md says "Addendum to PRD v1.1"; prd.md is v1.0.
   *Proposed:* treat prd.md as current; fix the header when convenient.
 
-- **Q13 (reopened as an evidence requirement) — request deduplication.** ADR-0035 deferred it until benchmarks justify
-  it. The first full run could not show a stampede (ADR-0047). *Proposed:* add a stampede scenario (cold key, 300 ms
-  upstream, about 200 concurrent requests) and decide from its upstream call count.
-
 ## Resolved
+
+- **Q13 → [ADR-0049](../adr/0049-q13-stampede-measured.md):** stampede measured (151 upstream calls per refill at 500 rps × 300 ms; bursts of N give N calls); the pre-agreed rule says implement request deduplication. Design plan next, before code.
 
 - **Q15 → [ADR-0048](../adr/0048-redis-command-timeout-default.md):** `commandTimeoutMs` default raised from 50 to 350 ms by the pre-agreed rule (Linux showed stalls ≥ 50 ms in 7 of 10 windows; verified with 0 limiter 503s in 10 Mac windows).
 
@@ -33,4 +31,4 @@ with the ADR link. `[blocks: X]` marks the phase or component that can't be fina
 - **Q3 → [ADR-0033](../adr/0033-retries-and-breakers.md):** breaker states are `"closed" | "open" | "half-open"`.
 - **Q11 → [ADR-0033](../adr/0033-retries-and-breakers.md):** `halfOpenSuccessThreshold` (default 1, ≤ `halfOpenMaxRequests`).
 - **Q6 → [ADR-0035](../adr/0035-phase5-scope.md):** per-client cache keys on auth routes by default; `cache.scope: "shared"` opt-in; forwarded Authorization bypasses.
-- **Q13 → [ADR-0035](../adr/0035-phase5-scope.md):** request deduplication deferred until benchmarks justify it.
+- **Q13 → [ADR-0035](../adr/0035-phase5-scope.md):** request deduplication deferred until benchmarks justify it (decided by ADR-0049).

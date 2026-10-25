@@ -380,3 +380,21 @@ Format: date · goal · what changed · decisions (ADR links) · open threads.
 - **Changed:** default in the schema, tests, distributed example, ADR-0026/0034 notes; `bench-meta.ts` records the
   effective limiter settings and reports state them (older runs say "not recorded" rather than assume); ADR-0048; Q15
   moved to Resolved.
+
+## 2026-10-25 · Q13 stampede plan (draft)
+- **Planned, not implemented:** `docs/plans/q13-stampede.md`. Scenarios: Q13-A cold-key burst (exact N calls), Q13-B
+  expiry herd (500 rps, 300 ms upstream, TTL 2 s), Q13-C fast-upstream control. Gates on reconciliation; a decision
+  rule fixed before measuring (≥ 10× amplification per refill plus origin in-flight ≥ 10 or a gateway memory cost
+  ≥ 10 % of its limit → implement deduplication with its own ADR). The plan states openly that the design already
+  predicts about 150× at those parameters.
+
+## 2026-10-25 · Q13 measured and decided: implement request deduplication
+- **Built:** mock `maxInFlight` per path (tested); the `bench-stampede` route (+ loader test); `stampede-burst.js` /
+  `stampede-herd.js`; per-response `pg_duration` with the cache result; runner `BENCH_ONLY=Q13`; report gates (k6 MISS =
+  `/metrics` = mock calls; burst = N; burst start spread < 300 ms; 0 retries), refill clustering, a decision table, a
+  pool-cap note; 5 new tests (25 in total); 2 mutations.
+- **Ran:** quick (68/68 gates) and full (68/68). Full: bursts 50 → 50 and 200 → 200 calls (origin peak capped at 128 by
+  the upstream pool); herd median 151 per refill (model 151), in-flight 128; control median 2. Memory criterion not met
+  (−1.1 MiB). Rule → implement (ADR-0049).
+- **Fixed in the report while reading:** burst "achieved rps" used a 60 s window (0.8 rps); it now uses the measured span.
+- **Next:** a deduplication design plan for review (options in the plan's §5).

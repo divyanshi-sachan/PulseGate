@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # k6 performance suite against the mock upstreams (docs/plans/real-data-testing.md §3, ADR-0046). Never touches
 # third-party APIs. BENCH_PROFILE=quick (default, minutes) or full (published reports). BENCH_ONLY=K4,K5 runs a subset;
-# BENCH_K8_REPEAT=N repeats the Redis throughput windows (Q15).
+# BENCH_K8_REPEAT=N repeats the Redis throughput windows (Q15). BENCH_ONLY=Q13 runs the stampede scenarios.
 # Raw results stay in benchmarks/reports/raw/<run-id>/ (git-ignored). The stacks are always torn down.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -130,6 +130,17 @@ if wanted K7; then
   fetch_in gateway http://127.0.0.1:9091/health >"$BENCH_RUN_DIR/k7-failing.health.json"
 fi
 if [ "$BENCH_PROFILE" = full ] && wanted K9; then run_k6 k9-saturation saturation.js; fi
+if wanted Q13; then
+  # Q13 stampede (docs/plans/q13-stampede.md). A: N simultaneous requests on a cold key; a fresh key per repetition.
+  for n in 50 200; do
+    for rep in 1 2 3; do
+      run_k6 "q13-burst-n$n-r$rep" stampede-burst.js "N=$n" "KEY=burst-n$n-r$rep-$(date +%s)"
+    done
+  done
+  # B: expiry herd on one hot key (300 ms upstream); C: the same with a 1 ms upstream (control).
+  run_k6 q13-herd stampede-herd.js DELAY=300
+  run_k6 q13-control stampede-herd.js DELAY=1
+fi
 "${LOCAL[@]}" down -v --remove-orphans >/dev/null 2>&1
 
 # ---- Redis limiter, 2 instances (K8) -------------------------------------------------------------------------------

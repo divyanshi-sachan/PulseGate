@@ -15,8 +15,9 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
  *   _contentLength=1   with _bytes, send Content-Length up front
  *
  * Any other request gets a JSON echo of what the upstream received. GET /healthz is a liveness probe.
- * GET /_stats returns how many requests the mock has received, in total and per path (query excluded), so load tests
- * can reconcile what reached the upstream (ADR-0046). Neither endpoint counts itself.
+ * GET /_stats returns how many requests the mock has received, in total and per path (query excluded), and the peak
+ * number of concurrent requests per path, so load tests can reconcile what reached the upstream and how hard it was hit
+ * at once (ADR-0046, Q13). Neither endpoint counts itself.
  */
 export interface MockOptions {
   /** Reported in every echo, e.g. "orders". */
@@ -119,14 +120,29 @@ class RequestStats {
   total = 0;
   otherPaths = 0;
   readonly byPath = new Map<string, number>();
+  readonly #inFlight = new Map<string, number>();
+  readonly maxInFlight = new Map<string, number>();
 
-  record(rawUrl: string): void {
+  /** Counts a request; returns a function that marks it finished (for the in-flight peak), or undefined if untracked. */
+  record(rawUrl: string): (() => void) | undefined {
     this.total++;
     const path = rawUrl.split('?')[0] ?? rawUrl;
     const seen = this.byPath.get(path);
     if (seen !== undefined) this.byPath.set(path, seen + 1);
     else if (this.byPath.size < MAX_STAT_PATHS) this.byPath.set(path, 1);
-    else this.otherPaths++;
+    else {
+      this.otherPaths++;
+      return undefined;
+    }
+    const now = (this.#inFlight.get(path) ?? 0) + 1;
+    this.#inFlight.set(path, now);
+    this.maxInFlight.set(path, Math.max(this.maxInFlight.get(path) ?? 0, now));
+    let done = false;
+    return () => {
+      if (done) return;
+      done = true;
+      this.#inFlight.set(path, (this.#inFlight.get(path) ?? 1) - 1);
+    };
   }
 
   toJSON() {
@@ -134,6 +150,7 @@ class RequestStats {
       total: this.total,
       otherPaths: this.otherPaths,
       byPath: Object.fromEntries(this.byPath),
+      maxInFlight: Object.fromEntries(this.maxInFlight),
     };
   }
 }
@@ -156,7 +173,8 @@ export function createMockServer(options: MockOptions): Server & { failKeys: () 
         sendJson(res, 200, { service: options.name, ...stats.toJSON() });
         return;
       }
-      stats.record(rawUrl);
+      const finished = stats.record(rawUrl);
+      if (finished !== undefined) res.once('close', finished);
 
       const body = await readBody(req);
       const delay = intParam(params, '_delay', 0, MAX_DELAY_MS) ?? 0;

@@ -114,6 +114,11 @@ describe('loadConfigFile', () => {
       scope: 'shared',
       varyHeaders: [],
     });
+    expect(local.routes.find((r) => r.id === 'bench-stampede')).toMatchObject({
+      timeoutMs: 3000,
+      retries: { maxAttempts: 1 },
+      cache: { enabled: true, ttlSeconds: 2, scope: 'shared' },
+    });
     const redis = await loadConfigFile(
       fileURLToPath(new URL('../../../config/routes.bench-redis.yaml', import.meta.url)),
     );

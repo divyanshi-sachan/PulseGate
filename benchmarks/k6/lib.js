@@ -2,7 +2,7 @@
 // Every scenario: an open model (arrival-rate executors), a warm-up phase tagged phase=warmup that the report excludes
 // from latency statistics, and a measured phase tagged phase=measure. Thresholds gate correctness only; latency and
 // throughput are informational until there is repeatable baseline data.
-import { Counter } from 'k6/metrics';
+import { Counter, Trend } from 'k6/metrics';
 
 export const PROFILE = __ENV.BENCH_PROFILE === 'full' ? 'full' : 'quick';
 const WINDOWS = { full: { warmup: 15, measure: 60 }, quick: { warmup: 5, measure: 10 } };
@@ -17,12 +17,17 @@ export const FIXED_BODY = '_bytes=1024&_contentLength=1';
 /** One point per response with route, status and X-Cache, for reconciliation in scripts/bench-report.ts. */
 export const responses = new Counter('pg_responses');
 
+/** The same response's duration with its cache result, for MISS vs HIT latency (Q13). */
+export const durations = new Trend('pg_duration', true);
+
 export function record(res, tags) {
-  responses.add(1, {
+  const all = {
     status: String(res.status),
     cache: res.headers['X-Cache'] || '-',
     ...tags,
-  });
+  };
+  responses.add(1, all);
+  durations.add(res.timings.duration, all);
 }
 
 export const SUMMARY_TREND_STATS = ['avg', 'min', 'med', 'p(90)', 'p(95)', 'p(99)', 'max', 'count'];

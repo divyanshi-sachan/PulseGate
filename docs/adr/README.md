@@ -53,3 +53,4 @@ Accepted ADRs **override** the spec documents where they conflict. Create new on
 | [0046](0046-k6-performance-suite.md) | k6 performance suite against the mock upstreams (real-data testing, step 3) | Accepted |
 | [0047](0047-first-benchmark-results.md) | First full benchmark run and its findings (real-data testing, step 4) | Accepted (findings; Q13, Q15 open) |
 | [0048](0048-redis-command-timeout-default.md) | Raise the Redis command timeout default to 350 ms (Q15) | Accepted |
+| [0049](0049-q13-stampede-measured.md) | Cache stampede measured; request deduplication will be implemented (Q13) | Accepted (design plan next) |

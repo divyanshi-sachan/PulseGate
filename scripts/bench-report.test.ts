@@ -5,6 +5,8 @@ import { gzipSync } from 'node:zlib';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   acceptedInterval,
+  q13Verdict,
+  refillClusters,
   describeSaturation,
   evaluate,
   formatErrors,
@@ -164,7 +166,9 @@ function k4Scenario(
   const raw: RawRun = {
     responses: k6Cache.map((cache) => ({
       tags: { route: 'bench-cached', status: '200', cache, phase: 'measure' },
+      timeMs: 0,
     })),
+    durations: [],
     bySubject: new Map(),
     perSecond: new Map(),
     measureSpanMs: 10_000,
@@ -246,8 +250,8 @@ describe('Q15 evidence per Redis window', () => {
       raw: {
         ...scenario.raw,
         responses: [
-          { tags: { route: 'bench-redis-plain', status: '200' } },
-          { tags: { route: 'bench-redis-plain', status: '503' } },
+          { tags: { route: 'bench-redis-plain', status: '200' }, timeMs: 0 },
+          { tags: { route: 'bench-redis-plain', status: '503' }, timeMs: 0 },
         ],
       },
       snap: {
@@ -299,6 +303,126 @@ describe('Q15 evidence per Redis window', () => {
     expect(recorded).toContain('| k8-tput-1-r2 | 50 | 94.1 | 23.8 | 1 |');
     // Older runs: say it isn't recorded rather than assume a value.
     expect(render(meta, 'run', [result], {})).toContain("not recorded in this run's metadata");
+  });
+});
+
+describe('Q13 stampede evaluation', () => {
+  /** A herd-like run: `refills` clusters of `perRefill` MISSes 2 s apart, HITs in between. */
+  function stampede(
+    name: string,
+    opts: {
+      refills: number;
+      perRefill: number;
+      upstream?: number;
+      inFlight?: number;
+      gatewayMemMiB?: number;
+    },
+  ): ScenarioData {
+    const base = k4Scenario();
+    const responses: RawRun['responses'] = [];
+    const durations: RawRun['durations'] = [];
+    for (let r = 0; r < opts.refills; r++) {
+      for (let i = 0; i < 20; i++) {
+        const cache = i < opts.perRefill ? 'MISS' : 'HIT';
+        const timeMs = r * 2000 + i * 2;
+        const tags = { route: 'bench-stampede', status: '200', cache, phase: 'measure' };
+        responses.push({ tags, timeMs });
+        durations.push({ tags, timeMs, durationMs: cache === 'MISS' ? 300 : 1 });
+      }
+    }
+    const misses = opts.refills * opts.perRefill;
+    const path = name === 'q13-control' ? '/bench/stampede/control' : '/bench/stampede/herd';
+    return {
+      ...base,
+      name,
+      raw: { ...base.raw, responses, durations },
+      snap: {
+        ...base.snap,
+        metricsAfter: parsePrometheus(
+          [
+            `pulsegate_cache_requests_total{route="bench-stampede",result="miss"} ${String(misses)}`,
+            `pulsegate_requests_total{route="bench-stampede",status_class="2xx",code="none"} ${String(responses.length)}`,
+          ].join('\n'),
+        ),
+        ordersBefore: { total: 0, byPath: {} },
+        ordersAfter: {
+          total: misses,
+          byPath: { [path]: opts.upstream ?? misses },
+          maxInFlight: { [path]: opts.inFlight ?? opts.perRefill },
+        },
+      },
+      usage: {
+        gateway: {
+          samples: 10,
+          cpuAvgPct: 10,
+          cpuMaxPct: 20,
+          memMaxBytes: (opts.gatewayMemMiB ?? 80) * 1024 ** 2,
+        },
+      },
+    };
+  }
+
+  it('clusters MISSes into refills by time gaps', () => {
+    expect(refillClusters(stampede('q13-herd', { refills: 3, perRefill: 12 }).raw)).toEqual([
+      12, 12, 12,
+    ]);
+  });
+
+  it('gates pass when k6, /metrics and the mock agree, and record per-refill amplification', () => {
+    const result = evaluate(stampede('q13-herd', { refills: 3, perRefill: 12 }), 10);
+    expect(result.gates.filter((g) => !g.pass)).toEqual([]);
+    expect(result.q13).toEqual({ medianPerRefill: 12, refills: 3, originPeakInFlight: 12 });
+  });
+
+  it('fails when the upstream received calls k6 did not see as misses', () => {
+    const failed = evaluate(
+      stampede('q13-herd', { refills: 3, perRefill: 12, upstream: 40 }),
+      10,
+    ).gates.filter((g) => !g.pass);
+    expect(failed.map((g) => g.name)).toContain('k6 MISS = upstream calls (mock /_stats)');
+  });
+
+  it('applies the decision rule: amplification AND (in-flight OR memory)', () => {
+    const control = evaluate(
+      stampede('q13-control', { refills: 3, perRefill: 1, gatewayMemMiB: 80 }),
+      10,
+    );
+    const big = evaluate(
+      stampede('q13-herd', { refills: 3, perRefill: 12, gatewayMemMiB: 90 }),
+      10,
+    );
+    expect(q13Verdict(big, control).implement).toBe(true); // 12 ≥ 10 and in-flight 12 ≥ 10
+    const small = evaluate(
+      stampede('q13-herd', { refills: 3, perRefill: 4, gatewayMemMiB: 90 }),
+      10,
+    );
+    expect(q13Verdict(small, control).implement).toBe(false); // 4 < 10
+    const lowInFlight = evaluate(
+      stampede('q13-herd', { refills: 3, perRefill: 12, inFlight: 3, gatewayMemMiB: 90 }),
+      10,
+    );
+    expect(q13Verdict(lowInFlight, control).implement).toBe(false); // in-flight 3, memory +10 MiB: neither cost met
+  });
+
+  it('burst: requires exactly N upstream calls and a start spread under the upstream delay', () => {
+    const run = stampede('q13-burst-n20-r1', { refills: 1, perRefill: 20 }); // all 20 miss, as in a real burst
+    expect(evaluate(run, 10).gates.filter((g) => !g.pass)).toEqual([]);
+    const wrongN = evaluate({ ...run, name: 'q13-burst-n50-r1' }, 10).gates.filter((g) => !g.pass);
+    expect(wrongN.map((g) => g.name)).toContain(
+      'upstream calls = N (no coalescing: every simultaneous request misses)',
+    );
+    const spread = {
+      ...run,
+      raw: {
+        ...run.raw,
+        durations: [...run.raw.durations, { tags: {}, timeMs: 10_000, durationMs: 1 }],
+      },
+    };
+    expect(
+      evaluate(spread, 10)
+        .gates.filter((g) => !g.pass)
+        .map((g) => g.name),
+    ).toContain('all N requests started within the 300 ms upstream delay (valid burst)');
   });
 });
 

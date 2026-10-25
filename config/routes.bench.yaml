@@ -82,3 +82,15 @@ routes:
     auth: { required: false }
     rateLimit: { capacity: 10000000, refillRatePerSecond: 10000000 }
     retries: { maxAttempts: 3, baseDelayMs: 10, maxDelayMs: 50 }
+
+  # Q13 stampede (docs/plans/q13-stampede.md): cache on, short TTL so a hot key refills often, no retries (so retries
+  # can't add upstream calls), 64 KiB bodies via _bytes.
+  - id: bench-stampede
+    pathPrefix: '/bench/stampede'
+    methods: ['GET']
+    upstreamId: orders-service
+    auth: { required: false }
+    rateLimit: { capacity: 10000000, refillRatePerSecond: 10000000 }
+    timeoutMs: 3000
+    retries: { maxAttempts: 1 }
+    cache: { enabled: true, ttlSeconds: 2, scope: 'shared' }

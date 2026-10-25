@@ -620,6 +620,24 @@ const MUTATIONS: Mutation[] = [
     tests: ['scripts/bench-report.test.ts'],
   },
   {
+    id: 'q13-upstream-gate-ignored',
+    guards: 'Q13 plan §3: k6 MISS count must equal the upstream calls the mock received',
+    file: 'scripts/bench-report.ts',
+    find: "      gates.push(equal('k6 MISS = upstream calls (mock /_stats)', misses, upstream, 'k6', 'mock'));",
+    replace:
+      "      gates.push(equal('k6 MISS = upstream calls (mock /_stats)', misses, misses, 'k6', 'mock'));",
+    tests: ['scripts/bench-report.test.ts'],
+  },
+  {
+    id: 'q13-rule-or-instead-of-and',
+    guards: 'Q13 plan §4: implement only if amplification AND (in-flight OR memory) are met',
+    file: 'scripts/bench-report.ts',
+    find: '    implement: ampRow?.met === true && (inFlightRow?.met === true || memRow?.met === true),',
+    replace:
+      '    implement: ampRow?.met === true || inFlightRow?.met === true || memRow?.met === true,',
+    tests: ['scripts/bench-report.test.ts'],
+  },
+  {
     id: 'ready-despite-redis-down',
     guards: 'ADR-0034: fail-closed readiness reflects Redis',
     file: 'apps/gateway/src/app.ts',

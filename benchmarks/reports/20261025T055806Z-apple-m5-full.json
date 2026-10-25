@@ -1,0 +1,498 @@
+{
+  "runId": "20261025T055806Z-apple-m5-full",
+  "profile": "full",
+  "startedAt": "2026-10-25T05:58:07.206Z",
+  "host": {
+    "cpuModel": "Apple M5",
+    "logicalCpus": 10,
+    "memoryBytes": 17179869184,
+    "os": "Darwin 25.6.0 (arm64)"
+  },
+  "gitCommit": "314ddbcf7e7d4d9905f1cc37db31a448ffe772a7",
+  "scenarios": [
+    {
+      "name": "q13-burst-n50-r1",
+      "offered": "50 simultaneous requests, cold key, 300 ms upstream",
+      "achievedRps": 135.17759220194264,
+      "dropped": 0,
+      "latencyMs": {
+        "avg": 340.01086372,
+        "med": 344.2622505,
+        "p90": 367.9076503,
+        "p95": 369.0839504,
+        "p99": 369.1539765,
+        "max": 369.173209,
+        "count": 50
+      },
+      "serverErrorPct": 0,
+      "gates": [
+        {
+          "name": "k6 correctness checks (exit code)",
+          "pass": true,
+          "evidence": "k6 exit 0"
+        },
+        {
+          "name": "statuses only 200",
+          "pass": true,
+          "evidence": "seen: 200"
+        },
+        {
+          "name": "bench-stampede: k6 responses = gateway requests_total delta",
+          "pass": true,
+          "evidence": "k6 = 50, /metrics = 50"
+        },
+        {
+          "name": "bench-stampede: 2xx k6 = /metrics",
+          "pass": true,
+          "evidence": "k6 = 50, /metrics = 50"
+        },
+        {
+          "name": "k6 MISS = /metrics miss delta",
+          "pass": true,
+          "evidence": "k6 = 50, /metrics = 50"
+        },
+        {
+          "name": "k6 MISS = upstream calls (mock /_stats)",
+          "pass": true,
+          "evidence": "k6 = 50, mock = 50"
+        },
+        {
+          "name": "no retries (retries can't add upstream calls)",
+          "pass": true,
+          "evidence": "/metrics retries = 0, expected = 0"
+        },
+        {
+          "name": "upstream calls = N (no coalescing: every simultaneous request misses)",
+          "pass": true,
+          "evidence": "mock = 50, N = 50"
+        },
+        {
+          "name": "all N requests started within the 300 ms upstream delay (valid burst)",
+          "pass": true,
+          "evidence": "start spread 1.1 ms"
+        }
+      ]
+    },
+    {
+      "name": "q13-burst-n50-r2",
+      "offered": "50 simultaneous requests, cold key, 300 ms upstream",
+      "achievedRps": 137.87327776214437,
+      "dropped": 0,
+      "latencyMs": {
+        "avg": 342.32476169999995,
+        "med": 341.5977295,
+        "p90": 361.4627664,
+        "p95": 361.5760939,
+        "p99": 361.70237041,
+        "max": 361.760333,
+        "count": 50
+      },
+      "serverErrorPct": 0,
+      "gates": [
+        {
+          "name": "k6 correctness checks (exit code)",
+          "pass": true,
+          "evidence": "k6 exit 0"
+        },
+        {
+          "name": "statuses only 200",
+          "pass": true,
+          "evidence": "seen: 200"
+        },
+        {
+          "name": "bench-stampede: k6 responses = gateway requests_total delta",
+          "pass": true,
+          "evidence": "k6 = 50, /metrics = 50"
+        },
+        {
+          "name": "bench-stampede: 2xx k6 = /metrics",
+          "pass": true,
+          "evidence": "k6 = 50, /metrics = 50"
+        },
+        {
+          "name": "k6 MISS = /metrics miss delta",
+          "pass": true,
+          "evidence": "k6 = 50, /metrics = 50"
+        },
+        {
+          "name": "k6 MISS = upstream calls (mock /_stats)",
+          "pass": true,
+          "evidence": "k6 = 50, mock = 50"
+        },
+        {
+          "name": "no retries (retries can't add upstream calls)",
+          "pass": true,
+          "evidence": "/metrics retries = 0, expected = 0"
+        },
+        {
+          "name": "upstream calls = N (no coalescing: every simultaneous request misses)",
+          "pass": true,
+          "evidence": "mock = 50, N = 50"
+        },
+        {
+          "name": "all N requests started within the 300 ms upstream delay (valid burst)",
+          "pass": true,
+          "evidence": "start spread 1.1 ms"
+        }
+      ]
+    },
+    {
+      "name": "q13-burst-n50-r3",
+      "offered": "50 simultaneous requests, cold key, 300 ms upstream",
+      "achievedRps": 156.48890250695527,
+      "dropped": 0,
+      "latencyMs": {
+        "avg": 314.51272336000005,
+        "med": 312.7623955,
+        "p90": 318.3647208,
+        "p95": 318.3890981,
+        "p99": 318.45284857999997,
+        "max": 318.489333,
+        "count": 50
+      },
+      "serverErrorPct": 0,
+      "gates": [
+        {
+          "name": "k6 correctness checks (exit code)",
+          "pass": true,
+          "evidence": "k6 exit 0"
+        },
+        {
+          "name": "statuses only 200",
+          "pass": true,
+          "evidence": "seen: 200"
+        },
+        {
+          "name": "bench-stampede: k6 responses = gateway requests_total delta",
+          "pass": true,
+          "evidence": "k6 = 50, /metrics = 50"
+        },
+        {
+          "name": "bench-stampede: 2xx k6 = /metrics",
+          "pass": true,
+          "evidence": "k6 = 50, /metrics = 50"
+        },
+        {
+          "name": "k6 MISS = /metrics miss delta",
+          "pass": true,
+          "evidence": "k6 = 50, /metrics = 50"
+        },
+        {
+          "name": "k6 MISS = upstream calls (mock /_stats)",
+          "pass": true,
+          "evidence": "k6 = 50, mock = 50"
+        },
+        {
+          "name": "no retries (retries can't add upstream calls)",
+          "pass": true,
+          "evidence": "/metrics retries = 0, expected = 0"
+        },
+        {
+          "name": "upstream calls = N (no coalescing: every simultaneous request misses)",
+          "pass": true,
+          "evidence": "mock = 50, N = 50"
+        },
+        {
+          "name": "all N requests started within the 300 ms upstream delay (valid burst)",
+          "pass": true,
+          "evidence": "start spread 1.3 ms"
+        }
+      ]
+    },
+    {
+      "name": "q13-burst-n200-r1",
+      "offered": "200 simultaneous requests, cold key, 300 ms upstream",
+      "achievedRps": 275.77050454018166,
+      "dropped": 0,
+      "latencyMs": {
+        "avg": 443.6301696450001,
+        "med": 365.2737295,
+        "p90": 601.1501082999999,
+        "p95": 666.6854438,
+        "p99": 673.5156915,
+        "max": 674.320959,
+        "count": 200
+      },
+      "serverErrorPct": 0,
+      "gates": [
+        {
+          "name": "k6 correctness checks (exit code)",
+          "pass": true,
+          "evidence": "k6 exit 0"
+        },
+        {
+          "name": "statuses only 200",
+          "pass": true,
+          "evidence": "seen: 200"
+        },
+        {
+          "name": "bench-stampede: k6 responses = gateway requests_total delta",
+          "pass": true,
+          "evidence": "k6 = 200, /metrics = 200"
+        },
+        {
+          "name": "bench-stampede: 2xx k6 = /metrics",
+          "pass": true,
+          "evidence": "k6 = 200, /metrics = 200"
+        },
+        {
+          "name": "k6 MISS = /metrics miss delta",
+          "pass": true,
+          "evidence": "k6 = 200, /metrics = 200"
+        },
+        {
+          "name": "k6 MISS = upstream calls (mock /_stats)",
+          "pass": true,
+          "evidence": "k6 = 200, mock = 200"
+        },
+        {
+          "name": "no retries (retries can't add upstream calls)",
+          "pass": true,
+          "evidence": "/metrics retries = 0, expected = 0"
+        },
+        {
+          "name": "upstream calls = N (no coalescing: every simultaneous request misses)",
+          "pass": true,
+          "evidence": "mock = 200, N = 200"
+        },
+        {
+          "name": "all N requests started within the 300 ms upstream delay (valid burst)",
+          "pass": true,
+          "evidence": "start spread 52.3 ms"
+        }
+      ]
+    },
+    {
+      "name": "q13-burst-n200-r2",
+      "offered": "200 simultaneous requests, cold key, 300 ms upstream",
+      "achievedRps": 279.8243309851818,
+      "dropped": 0,
+      "latencyMs": {
+        "avg": 425.689657575,
+        "med": 363.41029149999997,
+        "p90": 576.8884084,
+        "p95": 611.65992855,
+        "p99": 668.17858325,
+        "max": 668.258167,
+        "count": 200
+      },
+      "serverErrorPct": 0,
+      "gates": [
+        {
+          "name": "k6 correctness checks (exit code)",
+          "pass": true,
+          "evidence": "k6 exit 0"
+        },
+        {
+          "name": "statuses only 200",
+          "pass": true,
+          "evidence": "seen: 200"
+        },
+        {
+          "name": "bench-stampede: k6 responses = gateway requests_total delta",
+          "pass": true,
+          "evidence": "k6 = 200, /metrics = 200"
+        },
+        {
+          "name": "bench-stampede: 2xx k6 = /metrics",
+          "pass": true,
+          "evidence": "k6 = 200, /metrics = 200"
+        },
+        {
+          "name": "k6 MISS = /metrics miss delta",
+          "pass": true,
+          "evidence": "k6 = 200, /metrics = 200"
+        },
+        {
+          "name": "k6 MISS = upstream calls (mock /_stats)",
+          "pass": true,
+          "evidence": "k6 = 200, mock = 200"
+        },
+        {
+          "name": "no retries (retries can't add upstream calls)",
+          "pass": true,
+          "evidence": "/metrics retries = 0, expected = 0"
+        },
+        {
+          "name": "upstream calls = N (no coalescing: every simultaneous request misses)",
+          "pass": true,
+          "evidence": "mock = 200, N = 200"
+        },
+        {
+          "name": "all N requests started within the 300 ms upstream delay (valid burst)",
+          "pass": true,
+          "evidence": "start spread 54.1 ms"
+        }
+      ]
+    },
+    {
+      "name": "q13-burst-n200-r3",
+      "offered": "200 simultaneous requests, cold key, 300 ms upstream",
+      "achievedRps": 306.50480878058454,
+      "dropped": 0,
+      "latencyMs": {
+        "avg": 416.58132654499997,
+        "med": 312.55820800000004,
+        "p90": 609.9174122000001,
+        "p95": 616.9073316,
+        "p99": 617.6263865,
+        "max": 617.875375,
+        "count": 200
+      },
+      "serverErrorPct": 0,
+      "gates": [
+        {
+          "name": "k6 correctness checks (exit code)",
+          "pass": true,
+          "evidence": "k6 exit 0"
+        },
+        {
+          "name": "statuses only 200",
+          "pass": true,
+          "evidence": "seen: 200"
+        },
+        {
+          "name": "bench-stampede: k6 responses = gateway requests_total delta",
+          "pass": true,
+          "evidence": "k6 = 200, /metrics = 200"
+        },
+        {
+          "name": "bench-stampede: 2xx k6 = /metrics",
+          "pass": true,
+          "evidence": "k6 = 200, /metrics = 200"
+        },
+        {
+          "name": "k6 MISS = /metrics miss delta",
+          "pass": true,
+          "evidence": "k6 = 200, /metrics = 200"
+        },
+        {
+          "name": "k6 MISS = upstream calls (mock /_stats)",
+          "pass": true,
+          "evidence": "k6 = 200, mock = 200"
+        },
+        {
+          "name": "no retries (retries can't add upstream calls)",
+          "pass": true,
+          "evidence": "/metrics retries = 0, expected = 0"
+        },
+        {
+          "name": "upstream calls = N (no coalescing: every simultaneous request misses)",
+          "pass": true,
+          "evidence": "mock = 200, N = 200"
+        },
+        {
+          "name": "all N requests started within the 300 ms upstream delay (valid burst)",
+          "pass": true,
+          "evidence": "start spread 34.7 ms"
+        }
+      ]
+    },
+    {
+      "name": "q13-control",
+      "offered": "500 rps, one hot key, TTL 2 s, 1 ms upstream",
+      "achievedRps": 500.01666666666665,
+      "dropped": 0,
+      "latencyMs": {
+        "avg": 0.438429522915902,
+        "med": 0.38975,
+        "p90": 0.582958,
+        "p95": 0.685417,
+        "p99": 1.396,
+        "max": 71.214458,
+        "count": 30001
+      },
+      "serverErrorPct": 0,
+      "gates": [
+        {
+          "name": "k6 correctness checks (exit code)",
+          "pass": true,
+          "evidence": "k6 exit 0"
+        },
+        {
+          "name": "statuses only 200",
+          "pass": true,
+          "evidence": "seen: 200"
+        },
+        {
+          "name": "bench-stampede: k6 responses = gateway requests_total delta",
+          "pass": true,
+          "evidence": "k6 = 37502, /metrics = 37502"
+        },
+        {
+          "name": "bench-stampede: 2xx k6 = /metrics",
+          "pass": true,
+          "evidence": "k6 = 37502, /metrics = 37502"
+        },
+        {
+          "name": "k6 MISS = /metrics miss delta",
+          "pass": true,
+          "evidence": "k6 = 86, /metrics = 86"
+        },
+        {
+          "name": "k6 MISS = upstream calls (mock /_stats)",
+          "pass": true,
+          "evidence": "k6 = 86, mock = 86"
+        },
+        {
+          "name": "no retries (retries can't add upstream calls)",
+          "pass": true,
+          "evidence": "/metrics retries = 0, expected = 0"
+        }
+      ]
+    },
+    {
+      "name": "q13-herd",
+      "offered": "500 rps, one hot key, TTL 2 s, 300 ms upstream",
+      "achievedRps": 498.03333333333336,
+      "dropped": 0,
+      "latencyMs": {
+        "avg": 35.36930793072756,
+        "med": 0.399833,
+        "p90": 301.022225,
+        "p95": 301.94062080000003,
+        "p99": 347.13161651999997,
+        "max": 424.332958,
+        "count": 29882
+      },
+      "serverErrorPct": 0,
+      "gates": [
+        {
+          "name": "k6 correctness checks (exit code)",
+          "pass": true,
+          "evidence": "k6 exit 0"
+        },
+        {
+          "name": "statuses only 200",
+          "pass": true,
+          "evidence": "seen: 200"
+        },
+        {
+          "name": "bench-stampede: k6 responses = gateway requests_total delta",
+          "pass": true,
+          "evidence": "k6 = 37268, /metrics = 37268"
+        },
+        {
+          "name": "bench-stampede: 2xx k6 = /metrics",
+          "pass": true,
+          "evidence": "k6 = 37268, /metrics = 37268"
+        },
+        {
+          "name": "k6 MISS = /metrics miss delta",
+          "pass": true,
+          "evidence": "k6 = 4194, /metrics = 4194"
+        },
+        {
+          "name": "k6 MISS = upstream calls (mock /_stats)",
+          "pass": true,
+          "evidence": "k6 = 4194, mock = 4194"
+        },
+        {
+          "name": "no retries (retries can't add upstream calls)",
+          "pass": true,
+          "evidence": "/metrics retries = 0, expected = 0"
+        }
+      ]
+    }
+  ]
+}
