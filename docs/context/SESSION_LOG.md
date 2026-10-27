@@ -398,3 +398,19 @@ Format: date · goal · what changed · decisions (ADR links) · open threads.
   (−1.1 MiB). Rule → implement (ADR-0049).
 - **Fixed in the report while reading:** burst "achieved rps" used a 60 s window (0.8 rps); it now uses the measured span.
 - **Next:** a deduplication design plan for review (options in the plan's §5).
+
+## 2026-10-26 · Request deduplication design plan (draft)
+- **Planned, not implemented:** `docs/plans/request-dedup.md`. A single-flight `InflightFills` per cache key (bounded
+  waiters and keys), waiters bounded by their own deadline, hand-off on a leader abort or error, individual fallback for
+  non-storable or oversized responses, the same keys and partitions (never cross-client). Open decisions D1 (a
+  `COALESCED` label vs counting it as a hit), D2 (hand-off vs a detached leader), D3 (default on vs opt-in).
+- Q13 commit `d5fceb4` was already pushed by the user (its subject is truncated by one letter; left as is).
+- **Decided by the user:** D1 = `COALESCED` label, D2 = hand-off, D3 = on by default with `cache.coalesce: false` to opt out.
+
+## 2026-10-26 · Request deduplication, step 1: ADR, InflightFills, config
+- **Changed:** ADR-0050 (the design, D1–D3); `packages/cache` `InflightFills` (leader/waiter/none, idempotent settle that
+  removes the key before resolving waiters, waiter and key bounds, waiter signal) with 13 unit tests;
+  `responseCache.coalesce.{maxWaitersPerKey, maxPendingKeys}` (1000/10000) and route `cache.coalesce` (default true) in
+  the schema, example YAML, ADR-0026 and defaults tests; 3 mutations. A 4th mutation survived and showed an
+  unreachable guard (a stale settle removing a newer fill can't happen): guard and mutation removed, test renamed.
+- **Not yet:** the gateway doesn't use any of it (step 2).

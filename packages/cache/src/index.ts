@@ -1,4 +1,11 @@
 export {
+  InflightFills,
+  type FillOutcome,
+  type InflightFillsOptions,
+  type Join,
+  type WaitResult,
+} from './inflight-fills.ts';
+export {
   MemoryResponseCache,
   type MemoryCacheOptions,
   type MemoryCacheStats,

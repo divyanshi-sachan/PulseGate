@@ -23,6 +23,9 @@ operations: # /health, /ready, /metrics, always on (ADR-0022)
 responseCache: # per-instance response cache bounds (ADR-0036)
   maxEntries: 10000 # default
   maxBytes: 67108864 # default 64 MiB; least-recently-used entries are evicted beyond either bound
+  coalesce: # request deduplication bounds (ADR-0050); beyond either, misses go upstream as before
+    maxWaitersPerKey: 1000 # default; requests waiting on one in-flight fill
+    maxPendingKeys: 10000 # default; keys being filled at once
 
 rateLimit:
   mode: 'local' # default; "redis" also requires redisFailurePolicy: "open" | "closed" (ADR-0005)
@@ -68,6 +71,7 @@ routes:
       maxResponseBytes: 262144 # default
       scope: 'client' # default; per API client on auth routes, 'shared' for public data (ADR-0035)
       varyHeaders: [] # default; request headers that partition entries (never credential headers)
+      coalesce: true # default; concurrent misses on one key make one upstream call (ADR-0050)
     forwarding: # ADR-0021
       authorization: false # default; forward the client's Authorization header
       forwardedHost: false # default; add X-Forwarded-Host

@@ -47,6 +47,7 @@ describe('loadConfigFile', () => {
       maxResponseBytes: 262_144,
       scope: 'client',
       varyHeaders: [],
+      coalesce: true,
     });
   });
 

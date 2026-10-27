@@ -381,7 +381,15 @@ describe('cache (ADR-0009)', () => {
       maxResponseBytes: 262_144,
       scope: 'client',
       varyHeaders: [],
+      coalesce: true, // ADR-0050 (D3): on by default
     });
+  });
+
+  it('lets a route opt out of request deduplication (ADR-0050)', () => {
+    const config = parseConfig(
+      withInput((c) => (c.routes[0]['cache'] = { enabled: true, ttlSeconds: 30, coalesce: false })),
+    );
+    expect(config.routes[0]?.cache).toMatchObject({ enabled: true, coalesce: false });
   });
 });
 
@@ -390,7 +398,18 @@ describe('cache scope and vary headers (ADR-0035, ADR-0036)', () => {
     expect(parseConfig(minimal()).responseCache).toEqual({
       maxEntries: 10_000,
       maxBytes: 67_108_864,
+      coalesce: { maxWaitersPerKey: 1000, maxPendingKeys: 10_000 },
     });
+  });
+
+  it('bounds the request-deduplication limits (ADR-0050)', () => {
+    expect(() =>
+      parseConfig(withInput((c) => (c['responseCache'] = { coalesce: { maxWaitersPerKey: 0 } }))),
+    ).toThrow(ConfigError);
+    expect(
+      parseConfig(withInput((c) => (c['responseCache'] = { coalesce: { maxPendingKeys: 5 } })))
+        .responseCache.coalesce,
+    ).toEqual({ maxWaitersPerKey: 1000, maxPendingKeys: 5 });
   });
 
   it('accepts shared scope and lowercases vary headers', () => {

@@ -260,6 +260,8 @@ const cacheSchema = z
       .max(10)
       .refine(hasNoDuplicates, 'must not contain duplicates')
       .default(() => []),
+    /** Coalesce concurrent misses on the same key into one upstream call (ADR-0050); false opts the route out. */
+    coalesce: z.boolean().default(true),
   })
   .transform((cache, ctx) => {
     if (!cache.enabled) return { enabled: false as const };
@@ -277,6 +279,7 @@ const cacheSchema = z
       maxResponseBytes: cache.maxResponseBytes,
       scope: cache.scope,
       varyHeaders: cache.varyHeaders,
+      coalesce: cache.coalesce,
     };
   })
   .prefault({});
@@ -322,6 +325,13 @@ const baseConfigSchema = z.strictObject({
     .strictObject({
       maxEntries: positiveInt.max(10_000_000).default(10_000),
       maxBytes: positiveInt.default(67_108_864),
+      /** Request deduplication bounds (ADR-0050): beyond either, misses go upstream as before. */
+      coalesce: z
+        .strictObject({
+          maxWaitersPerKey: positiveInt.max(1_000_000).default(1000),
+          maxPendingKeys: positiveInt.max(10_000_000).default(10_000),
+        })
+        .prefault({}),
     })
     .prefault({}),
   circuitBreaker: circuitBreakerSchema,

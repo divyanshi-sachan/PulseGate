@@ -9,7 +9,8 @@ The dashboard e2e passes locally against Docker; the new CI `e2e` job runs on th
 is **done** (ADR-0044); step 2, real public API smoke tests R1–R9, is **done** (ADR-0045, opt-in `pnpm test:real`);
 step 3, the k6 suite, is **done** (ADR-0046, opt-in `pnpm bench`); step 4 is **done**: first full report committed (ADR-0047). It found intermittent fail-closed 503s from the 50 ms Redis
 command timeout during VM stalls (Q15), and Q13 needs a stampede scenario. Q15 is resolved: the default is now 350 ms (ADR-0048, measured on Mac and Linux CI). Q13 is decided (ADR-0049): the measured stampede (151 upstream calls per refill) meets the rule, so request
-deduplication will be implemented. Next: its design plan for review, then Phase 6 part B. License and release work deferred.
+deduplication will be implemented. Design approved (ADR-0050, D1–D3 by the user); step 1 is done: `InflightFills` and the config
+bounds. The config is validated but not yet used by the gateway (step 2 wires it). Next: step 2, gateway integration. License and release work deferred.
 
 ## Done
 - Product, system-design and implementation specs written.
