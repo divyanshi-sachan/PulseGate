@@ -1,6 +1,6 @@
 # ADR-0050: Request deduplication (single-flight) for cache misses
 
-- **Status:** Accepted (design; implemented in steps per `docs/plans/request-dedup.md`)
+- **Status:** Accepted (design; steps 1–2 implemented per `docs/plans/request-dedup.md`)
 - **Date:** 2026-10-26
 - **Source:** ADR-0049 (Q13: the measured stampede meets the rule). Plan `docs/plans/request-dedup.md` was approved
   with the user's decisions D1–D3.
@@ -57,3 +57,34 @@
   by `maxResponseBytes`.
 - **Expected effect (measured in step 4):** the Q13 herd goes from 151 upstream calls per refill to 1, and a burst of N
   from N to 1 when the response is storable.
+
+## Gateway integration (step 2, 2026-10-27)
+- **Where:** the cache-miss path in `apps/gateway/src/app.ts`, after auth and rate limiting. A request loops: a hit is
+  served as before; otherwise `fills.join(key, request.id)` makes it the leader, a waiter, or neither (limits).
+- **Leader settlement:** the capture settles the fill (`stored` with the very entry it stored, `not_storable` at
+  `begin`, `too_large`); a thrown error or `onBodyError` settles `aborted` or `failed`. A safety net on the response's
+  `close` (deferred one turn so a body that finished cleanly settles as stored first) settles `aborted`/`failed` for
+  every other path, such as the client leaving mid-body, which has no callback of its own.
+- **Waiters** are served exactly like a hit (status, cached headers, `Age`) with `X-Cache: COALESCED`. The log line
+  has `cacheStatus: "coalesced"` and `coalescedWith` (the leader's request ID). They make no attempts.
+- **Deadline:** a waiter waits at most its remaining route deadline. A request that waited (a hand-off leader, or a
+  waiter that falls back) passes its start time to the proxy (`ForwardRequest.startedAtMs`), so its upstream deadline
+  counts from the request start: waiting plus fetching never exceeds one `timeoutMs`. Requests that never waited keep
+  the previous behaviour (the deadline starts at the forward call).
+- **Metrics:** `pulsegate_cache_requests_total{result="coalesced"}` and
+  `pulsegate_cache_coalesce_fallbacks_total{reason}` (ADR-0036's table). `Gateway.coalescing.stats()` exposes
+  pending keys and waiters for tests and gauges.
+- **Not yet:** the stats window, admin contract and dashboard do not know `coalesced` (step 3); they see these requests
+  as completed requests with no cache lookup.
+
+## Verified
+- 12 socket tests (`apps/gateway/test/coalesce.test.ts`): 8 concurrent misses → 1 upstream call, 7 `COALESCED` + 1
+  `MISS`, identical bodies, metrics and log agree; then a plain `HIT`. No sharing across clients; rate limiting still
+  applies to waiters; `Set-Cookie`, oversized and upstream-error responses are never shared; hand-off after the
+  leader's client leaves (before and after headers); no extension of the route deadline; per-route opt-out; the waiter
+  and key bounds count their fallbacks. They wait on the gateway's own waiter count, not on sleeps, except the deadline
+  test, which uses real time with a margin.
+- 5 gateway mutations, all caught (82 in total): the key ignoring the client, coalesced counted as a hit, a
+  non-storable response not announced, waiting extending the deadline, and the leader safety net removed.
+- A bug the tests caught on the first run: `AbortSignal.timeout` needs an integer, and the new deadline arithmetic
+  produced fractions for every request. Fixed with `Math.ceil`.

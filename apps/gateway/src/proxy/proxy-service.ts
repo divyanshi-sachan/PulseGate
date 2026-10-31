@@ -50,6 +50,11 @@ export interface ForwardRequest {
   onAttempt?: () => void;
   /** Optional tee of the final response body, e.g. for the response cache (ADR-0036). */
   capture?: BodyCapture;
+  /**
+   * When the request began (`performance.now()`). The route deadline counts from here, so time spent waiting for
+   * another request's cache fill (ADR-0050) is not added on top of it. Defaults to now.
+   */
+  startedAtMs?: number;
 }
 
 /** Decides per final response whether to collect a copy of its body while it streams to the client. */
@@ -190,8 +195,9 @@ export class ProxyService {
     }
 
     const breaker = this.#breakers.get(upstream.config.id);
-    const deadlineAt = performance.now() + route.timeoutMs;
-    const deadline = AbortSignal.timeout(route.timeoutMs);
+    const deadlineAt = (input.startedAtMs ?? performance.now()) + route.timeoutMs;
+    // AbortSignal.timeout needs an integer number of milliseconds.
+    const deadline = AbortSignal.timeout(Math.max(1, Math.ceil(deadlineAt - performance.now())));
     const method = request.method ?? 'GET';
     const maxAttempts = isRetryEligible(method, body !== undefined, route.retries)
       ? route.retries.maxAttempts

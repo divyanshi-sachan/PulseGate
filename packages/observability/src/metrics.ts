@@ -38,6 +38,7 @@ export class GatewayMetrics {
   readonly #limiterUnavailable: Counter<'route'>;
   readonly #cacheRequests: Counter<'route' | 'result'>;
   readonly #cacheStores: Counter<'route' | 'result'>;
+  readonly #coalesceFallbacks: Counter<'route' | 'reason'>;
   readonly #cacheEvictions: Counter<'reason'>;
   readonly #breakerTransitions: Counter<'upstream' | 'from' | 'to'>;
   readonly #breakerState: Gauge<'upstream' | 'state'>;
@@ -100,8 +101,14 @@ export class GatewayMetrics {
     });
     this.#cacheRequests = new Counter({
       name: 'pulsegate_cache_requests_total',
-      help: 'Cache lookups on cache-enabled routes.',
+      help: 'Cache lookups on cache-enabled routes: hit, miss, bypass, or coalesced (served by waiting on another request).',
       labelNames: ['route', 'result'],
+      registers,
+    });
+    this.#coalesceFallbacks = new Counter({
+      name: 'pulsegate_cache_coalesce_fallbacks_total',
+      help: 'Misses that did not (or could not) coalesce: not storable, too large, hand-off, limits, deadline.',
+      labelNames: ['route', 'reason'],
       registers,
     });
     this.#cacheStores = new Counter({
@@ -218,8 +225,15 @@ export class GatewayMetrics {
     this.#limiterUnavailable.inc({ route: this.#route(routeId) });
   }
 
-  cacheLookup(routeId: string, result: 'hit' | 'miss' | 'bypass'): void {
+  cacheLookup(routeId: string, result: 'hit' | 'miss' | 'bypass' | 'coalesced'): void {
     this.#cacheRequests.inc({ route: this.#route(routeId), result });
+  }
+
+  cacheCoalesceFallback(
+    routeId: string,
+    reason: 'not_storable' | 'too_large' | 'handoff' | 'waiter_limit' | 'key_limit' | 'deadline',
+  ): void {
+    this.#coalesceFallbacks.inc({ route: this.#route(routeId), reason });
   }
 
   cacheStore(routeId: string, result: 'stored' | 'not_storable' | 'too_large'): void {

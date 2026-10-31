@@ -28,6 +28,13 @@ describe('InflightFills (ADR-0050)', () => {
     expect(fills.join('other').role).toBe('leader');
   });
 
+  it('tells waiters who the leader is, for tracing', () => {
+    const fills = new InflightFills();
+    expect(fills.join('k', 'req_leader').role).toBe('leader');
+    const joined = fills.join('k', 'req_waiter');
+    expect(joined.role === 'waiter' && joined.leader).toBe('req_leader');
+  });
+
   it('delivers the stored entry to every waiter, then frees the key', async () => {
     const fills = new InflightFills();
     const settle = leader(fills.join('k'));

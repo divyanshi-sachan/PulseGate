@@ -1,6 +1,6 @@
 # Plan: request deduplication (single-flight) for cache misses
 
-_Status: **approved** (2026-10-26); **step 1 done** (ADR-0050, `InflightFills`, config bounds). Follows ADR-0049 (Q13: the measured stampede meets the rule). Nothing is
+_Status: **approved** (2026-10-26); **steps 1–2 done** (ADR-0050: `InflightFills`, config bounds, gateway integration, metrics, mutations). Follows ADR-0049 (Q13: the measured stampede meets the rule). Nothing is
 implemented. **D1–D3 are decided by the user (2026-10-26): all as proposed** (`COALESCED` label, hand-off, on by
 default with opt-out). _
 

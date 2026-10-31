@@ -19,7 +19,10 @@ import {
   cacheableHeaders,
   cacheKey,
   cachePartition,
+  InflightFills,
   MemoryResponseCache,
+  type CachedResponse,
+  type FillOutcome,
   requestBypassReason,
   storability,
 } from '@pulsegate/cache';
@@ -95,6 +98,8 @@ export interface Gateway {
   readonly operations: FastifyInstance;
   /** Prometheus metrics served on the operations listener's /metrics (ADR-0036). */
   readonly metrics: GatewayMetrics;
+  /** Cache fills in flight and waiters on them, for gauges and tests (ADR-0050). */
+  readonly coalescing: { stats(): { pendingKeys: number; waiters: number } };
   /** Admin listener (ADR-0020), only when an admin token is configured. */
   readonly admin: FastifyInstance | undefined;
   /** Every route registered on the admin listener, for the auth-bypass test (plan §5). */
@@ -142,7 +147,9 @@ interface RequestOutcome {
   /** "degraded" when a fail-open local fallback decided (ADR-0034). */
   rateLimitMode?: string;
   /** hit | miss | bypass on cache-enabled routes (ADR-0036). */
-  cacheStatus?: 'hit' | 'miss' | 'bypass';
+  cacheStatus?: 'hit' | 'miss' | 'bypass' | 'coalesced';
+  /** Request ID of the leader whose fetch this request waited for (ADR-0050). */
+  coalescedWith?: string;
   /** What happened to a miss's response: stored | not_storable | too_large. */
   cacheStore?: 'stored' | 'not_storable' | 'too_large';
   /** Request metrics are recorded exactly once (completion or abort). */
@@ -225,6 +232,7 @@ function buildPublicServer(
   limiter: RateLimiter,
   breakers: CircuitBreakerRegistry,
   cache: MemoryResponseCache,
+  fills: InflightFills,
   cacheNow: () => number,
   metrics: GatewayMetrics,
   stats: StatsWindow | undefined,
@@ -282,6 +290,11 @@ function buildPublicServer(
   const handle = async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> => {
     const outcome: RequestOutcome = {};
     outcomes.set(request, outcome);
+    const startedAtMs = performance.now();
+    /** True once this request waited on another's fill: its deadline then counts from `startedAtMs` (ADR-0050). */
+    let waitedOnFill = false;
+    /** Set while this request leads a cache fill (ADR-0050); settled exactly once, on every path. */
+    let settleFill: ((outcome: FillOutcome) => void) | undefined;
     const response: ServerResponse = reply.raw;
     const client = new AbortController();
     response.once('close', () => {
@@ -367,24 +380,82 @@ function buildPublicServer(
             varyHeaders: routeCache.varyHeaders,
             requestHeaders: request.headers,
           });
-          const hit = await cache.get(key);
-          if (hit !== undefined) {
-            outcome.cacheStatus = 'hit';
-            metrics.cacheLookup(match.route.id, 'hit');
-            stats?.recordCacheLookup(match.route.id, 'hit');
-            return await reply
-              .code(hit.statusCode)
-              .headers(hit.headers)
+          const routeId = match.route.id;
+          const serveCached = async (
+            entry: CachedResponse,
+            label: 'HIT' | 'COALESCED',
+          ): Promise<FastifyReply> =>
+            await reply
+              .code(entry.statusCode)
+              .headers(entry.headers)
               .headers(rateHeaders)
-              .header('x-cache', 'HIT')
-              .header('age', String(Math.max(0, Math.floor((cacheNow() - hit.storedAtMs) / 1000))))
+              .header('x-cache', label)
+              .header(
+                'age',
+                String(Math.max(0, Math.floor((cacheNow() - entry.storedAtMs) / 1000))),
+              )
               .header('x-request-id', request.id)
-              .send(hit.body);
+              .send(entry.body);
+          // Single-flight (ADR-0050): a hit, or lead the fill, or wait for the leader's stored entry. A waiter whose
+          // leader failed or aborted hands off by looping; every wait is bounded by this request's own deadline.
+          for (;;) {
+            const hit = await cache.get(key);
+            if (hit !== undefined) {
+              outcome.cacheStatus = 'hit';
+              metrics.cacheLookup(routeId, 'hit');
+              stats?.recordCacheLookup(routeId, 'hit');
+              return await serveCached(hit, 'HIT');
+            }
+            if (!routeCache.coalesce) break;
+            const joined = fills.join(key, request.id);
+            if (joined.role === 'leader') {
+              settleFill = joined.settle;
+              // Whatever happens to this request, the fill ends. Deferred one turn so a body that finished cleanly
+              // settles as stored (the capture's complete) before this safety net runs.
+              response.once('close', () => {
+                setImmediate(() => {
+                  joined.settle({
+                    stored: false,
+                    reason: client.signal.aborted ? 'aborted' : 'failed',
+                  });
+                });
+              });
+              break;
+            }
+            if (joined.role === 'none') {
+              metrics.cacheCoalesceFallback(routeId, joined.reason);
+              break;
+            }
+            waitedOnFill = true;
+            const remainingMs = match.route.timeoutMs - (performance.now() - startedAtMs);
+            if (remainingMs <= 0) {
+              metrics.cacheCoalesceFallback(routeId, 'deadline');
+              throw new GatewayError('UPSTREAM_TIMEOUT');
+            }
+            const result = await joined.wait(
+              AbortSignal.any([client.signal, AbortSignal.timeout(Math.ceil(remainingMs))]),
+            );
+            if (result.stored) {
+              outcome.cacheStatus = 'coalesced';
+              if (joined.leader !== undefined) outcome.coalescedWith = joined.leader;
+              metrics.cacheLookup(routeId, 'coalesced');
+              return await serveCached(result.entry, 'COALESCED');
+            }
+            if (result.reason === 'cancelled') {
+              if (client.signal.aborted) throw new ClientAbortedError();
+              metrics.cacheCoalesceFallback(routeId, 'deadline');
+              throw new GatewayError('UPSTREAM_TIMEOUT');
+            }
+            if (result.reason === 'not_storable' || result.reason === 'too_large') {
+              // Never shared: fetch for ourselves, exactly as without deduplication.
+              metrics.cacheCoalesceFallback(routeId, result.reason);
+              break;
+            }
+            metrics.cacheCoalesceFallback(routeId, 'handoff');
           }
           outcome.cacheStatus = 'miss';
           metrics.cacheLookup(match.route.id, 'miss');
           stats?.recordCacheLookup(match.route.id, 'miss');
-          const routeId = match.route.id;
           capture = {
             begin: (statusCode, headers) => {
               // Freshness counts from when the response arrived, not when its body finished.
@@ -399,6 +470,8 @@ function buildPublicServer(
                 outcome.cacheStore = 'not_storable';
                 metrics.cacheStore(routeId, 'not_storable');
                 stats?.recordCacheStore(routeId, 'not_storable');
+                // Never shared: waiters fetch for themselves (ADR-0050).
+                settleFill?.({ stored: false, reason: 'not_storable' });
                 return undefined;
               }
               return {
@@ -408,18 +481,22 @@ function buildPublicServer(
                   outcome.cacheStore = 'stored';
                   metrics.cacheStore(routeId, 'stored');
                   stats?.recordCacheStore(routeId, 'stored');
-                  void cache.set(key, {
+                  const entry: CachedResponse = {
                     statusCode,
                     headers: cacheableHeaders(headers),
                     body,
                     storedAtMs,
                     expiresAtMs: storedAtMs + verdict.ttlMs,
-                  });
+                  };
+                  void cache.set(key, entry);
+                  // Waiters are served this very entry (ADR-0050).
+                  settleFill?.({ stored: true, entry });
                 },
                 tooLarge: () => {
                   outcome.cacheStore = 'too_large';
                   metrics.cacheStore(routeId, 'too_large');
                   stats?.recordCacheStore(routeId, 'too_large');
+                  settleFill?.({ stored: false, reason: 'too_large' });
                 },
               };
             },
@@ -443,6 +520,7 @@ function buildPublicServer(
         forwardedFor: address.forwardedFor,
         viaTrustedProxy: address.viaTrustedProxy,
         clientSignal: client.signal,
+        ...(waitedOnFill ? { startedAtMs } : {}),
         onAttempt: () => {
           outcome.attempts = (outcome.attempts ?? 0) + 1;
         },
@@ -450,6 +528,7 @@ function buildPublicServer(
         onBodyError: (error) => {
           const code = isGatewayError(error) ? error.code : 'UPSTREAM_UNAVAILABLE';
           outcome.errorCode = code;
+          settleFill?.({ stored: false, reason: 'failed' });
           request.log.warn(
             { routeId: outcome.routeId, errorCode: code, err: error },
             'response aborted mid-stream',
@@ -464,6 +543,11 @@ function buildPublicServer(
         .header('x-request-id', request.id)
         .send(result.body);
     } catch (error) {
+      // A leader that never got a response ends its fill now; waiters hand off (ADR-0050).
+      settleFill?.({
+        stored: false,
+        reason: error instanceof ClientAbortedError ? 'aborted' : 'failed',
+      });
       if (error instanceof ClientAbortedError) {
         outcome.errorCode = 'CLIENT_ABORTED';
         return reply;
@@ -559,6 +643,7 @@ function buildPublicServer(
         attempts: outcome?.attempts,
         rateLimitMode: outcome?.rateLimitMode,
         cacheStatus: outcome?.cacheStatus,
+        coalescedWith: outcome?.coalescedWith,
         cacheStore: outcome?.cacheStore,
       },
       'request completed',
@@ -733,6 +818,7 @@ export function createGateway(config: GatewayConfig, options: GatewayOptions = {
     },
   });
   cacheRef.current = cache;
+  const fills = new InflightFills(config.responseCache.coalesce);
   const publicServer = buildPublicServer(
     config,
     options,
@@ -740,6 +826,7 @@ export function createGateway(config: GatewayConfig, options: GatewayOptions = {
     limiter,
     breakers,
     cache,
+    fills,
     cacheNow,
     metrics,
     stats,
@@ -855,6 +942,7 @@ export function createGateway(config: GatewayConfig, options: GatewayOptions = {
     public: publicServer,
     operations,
     metrics,
+    coalescing: { stats: () => fills.stats() },
     admin: admin?.app,
     adminRoutes: admin?.routes ?? [],
     stats,

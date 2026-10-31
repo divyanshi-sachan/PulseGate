@@ -414,3 +414,26 @@ Format: date · goal · what changed · decisions (ADR links) · open threads.
   the schema, example YAML, ADR-0026 and defaults tests; 3 mutations. A 4th mutation survived and showed an
   unreachable guard (a stale settle removing a newer fill can't happen): guard and mutation removed, test renamed.
 - **Not yet:** the gateway doesn't use any of it (step 2).
+
+## 2026-10-27 · Request deduplication, step 2: gateway integration
+- **Committed and pushed for the user:** step 1 as `15bc311`.
+- **Changed:** `InflightFills.join(key, owner)` exposes the leader to waiters; the gateway's miss path loops
+  hit → leader → waiter (hand-off on failure) with settlement in the capture, the error paths and a close safety net;
+  `X-Cache: COALESCED`; log `coalescedWith`; metrics `result="coalesced"` + `pulsegate_cache_coalesce_fallbacks_total`
+  (ADR-0036 table); `ForwardRequest.startedAtMs` so waiting never extends the route deadline; `Gateway.coalescing.stats()`;
+  12 socket tests; 5 mutations (82 in total).
+- **Bug caught by the tests:** `AbortSignal.timeout` rejects fractional milliseconds; every request 500'd until the
+  deadline arithmetic used `Math.ceil`.
+- **Next:** step 3, stats window, admin contract, dashboard.
+
+## 2026-10-31 · Audit and the five-improvements plan (draft)
+- **Audited (read-only):** the full repo for a Cisco SDE resume (report delivered in chat): verified claims, weaknesses (no
+  load balancing, per-instance state, single event loop, Redis RTT per request, auth before limiter, IPv6 /64, no tracing,
+  no TLS), test counts (581 with Docker, 568 without: the 13 Redis tests need Testcontainers) and measured numbers from
+  the committed reports.
+- **Planned, not implemented:** `docs/plans/portfolio-improvements.md` for the audit's five improvements: (1) upstream
+  targets + load balancing + health checks, (2) Toxiproxy fault-recovery suite, (3) Redis token leasing, (4) distributed
+  tracing, (5) Linux capacity and soak. Decisions D1–D5 pending (breaker stays per upstream, Linux evidence from CI with 3
+  repeats, OpenTelemetry depth, opt-in inbound request IDs, leasing off by default).
+- **State at this point:** dedup step 2 is still uncommitted (HEAD 15bc311); Docker is stopped.
+- **Decided by the user:** D2 = GitHub runner, 3 repeats; D3 = OpenTelemetry spans; order = plan order, dedup steps 3–4 around item 5.

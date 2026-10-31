@@ -50,7 +50,8 @@ These come straight from the specs; violating one requires an ADR first.
   4xx (upstream or gateway), client aborts and `CIRCUIT_OPEN` never count; `UPSTREAM_RESPONSE_TOO_LARGE` counts once, no retry.
 - **Rate limiting:** `RateLimiter` Strategy interface; local = per-instance (not global); Redis = single
   atomic Lua script using **Redis server time**; Redis outage → explicit `fail-open | fail-closed`, never silent.
-- **Caching:** conservative by default — GET + success only, TTL + size + entry bounds, respect
+- **Caching:** conservative by default — GET + success only, TTL + size + entry bounds, concurrent misses on one key
+  make one upstream call (single-flight, ADR-0050; never across clients, never for non-storable responses), respect
   `private`/`no-store`, never cache personalized data under a shared key, no credentials in keys.
 - **Security:** never log/label/cache raw API keys, their digests or auth headers; store only SHA-256 digests (ADR-0031); admin on its own port with an `ADMIN_TOKEN` bearer (ADR-0020);
   upstreams only from validated config — routes reference them by `upstreamId` (ADR-0013), `baseUrl` http/https and path-only, never from requests (SSRF); raw-path forwarding with dot segments rejected (ADR-0019);

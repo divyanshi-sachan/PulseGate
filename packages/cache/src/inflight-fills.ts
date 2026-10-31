@@ -15,7 +15,12 @@ export type WaitResult = FillOutcome | { stored: false; reason: 'cancelled' };
 
 export type Join =
   | { role: 'leader'; settle: (outcome: FillOutcome) => void }
-  | { role: 'waiter'; wait: (signal: AbortSignal) => Promise<WaitResult> }
+  | {
+      role: 'waiter';
+      /** The leader's `owner` (e.g. its request ID), for tracing which request a waiter shared. */
+      leader: string | undefined;
+      wait: (signal: AbortSignal) => Promise<WaitResult>;
+    }
   | { role: 'none'; reason: 'waiter_limit' | 'key_limit' };
 
 export interface InflightFillsOptions {
@@ -26,6 +31,7 @@ export interface InflightFillsOptions {
 }
 
 interface Fill {
+  owner: string | undefined;
   waiters: Set<(result: WaitResult) => void>;
 }
 
@@ -44,17 +50,18 @@ export class InflightFills {
     this.#maxPendingKeys = options.maxPendingKeys ?? 10_000;
   }
 
-  join(key: string): Join {
+  /** `owner` identifies the caller if it becomes the leader (e.g. its request ID); waiters see it as `leader`. */
+  join(key: string, owner?: string): Join {
     const fill = this.#fills.get(key);
     if (fill === undefined) {
       if (this.#fills.size >= this.#maxPendingKeys) return { role: 'none', reason: 'key_limit' };
-      const created: Fill = { waiters: new Set() };
+      const created: Fill = { owner, waiters: new Set() };
       this.#fills.set(key, created);
       return { role: 'leader', settle: this.#settler(key, created) };
     }
     if (fill.waiters.size >= this.#maxWaitersPerKey)
       return { role: 'none', reason: 'waiter_limit' };
-    return { role: 'waiter', wait: (signal) => this.#wait(fill, signal) };
+    return { role: 'waiter', leader: fill.owner, wait: (signal) => this.#wait(fill, signal) };
   }
 
   /** For gauges and tests: keys being filled and waiters attached. */

@@ -662,6 +662,50 @@ const MUTATIONS: Mutation[] = [
     tests: ['packages/cache/src/inflight-fills.test.ts'],
   },
   {
+    id: 'dedup-key-ignores-client',
+    guards:
+      'ADR-0050: coalescing uses the cache key, so it never crosses clients on per-client routes',
+    file: 'apps/gateway/src/app.ts',
+    find: '            const joined = fills.join(key, request.id);',
+    replace: '            const joined = fills.join(match.route.id, request.id);',
+    tests: ['apps/gateway/test/coalesce.test.ts'],
+  },
+  {
+    id: 'dedup-coalesced-counted-as-hit',
+    guards: 'ADR-0050 D1: a coalesced response is its own result and never inflates the hit count',
+    file: 'apps/gateway/src/app.ts',
+    find: "              metrics.cacheLookup(routeId, 'coalesced');",
+    replace: "              metrics.cacheLookup(routeId, 'hit');",
+    tests: ['apps/gateway/test/coalesce.test.ts'],
+  },
+  {
+    id: 'dedup-non-storable-not-announced',
+    guards:
+      'ADR-0050: a non-storable response is never shared; waiters are told to fetch for themselves',
+    file: 'apps/gateway/src/app.ts',
+    find: "                settleFill?.({ stored: false, reason: 'not_storable' });",
+    replace: '',
+    tests: ['apps/gateway/test/coalesce.test.ts'],
+  },
+  {
+    id: 'dedup-wait-extends-deadline',
+    guards:
+      'ADR-0050: time spent waiting counts against the route deadline (no second full timeout after a hand-off)',
+    file: 'apps/gateway/src/app.ts',
+    find: '        ...(waitedOnFill ? { startedAtMs } : {}),',
+    replace: '',
+    tests: ['apps/gateway/test/coalesce.test.ts'],
+  },
+  {
+    id: 'dedup-leader-safety-net-removed',
+    guards:
+      'ADR-0050: a leader whose client leaves mid-body still ends its fill, so waiters hand off',
+    file: 'apps/gateway/src/app.ts',
+    find: '                  joined.settle({',
+    replace: '                  void ({',
+    tests: ['apps/gateway/test/coalesce.test.ts'],
+  },
+  {
     id: 'ready-despite-redis-down',
     guards: 'ADR-0034: fail-closed readiness reflects Redis',
     file: 'apps/gateway/src/app.ts',

@@ -69,7 +69,8 @@ in tests. Default process metrics (CPU, memory, event loop) are prefixed `pulseg
 | `pulsegate_retries_total` | counter | `route` |
 | `pulsegate_rate_limit_decisions_total` | counter | `route`, `decision` (`allowed \| rejected`), `mode` (`local \| redis \| degraded`) |
 | `pulsegate_rate_limiter_unavailable_total` | counter | `route` |
-| `pulsegate_cache_requests_total` | counter | `route`, `result` (`hit \| miss \| bypass`) |
+| `pulsegate_cache_requests_total` | counter | `route`, `result` (`hit \| miss \| bypass \| coalesced`; `coalesced` added by ADR-0050) |
+| `pulsegate_cache_coalesce_fallbacks_total` | counter | `route`, `reason` (`not_storable \| too_large \| handoff \| waiter_limit \| key_limit \| deadline`; ADR-0050) |
 | `pulsegate_cache_stores_total` | counter | `route`, `result` (`stored \| not_storable \| too_large`) |
 | `pulsegate_cache_evictions_total` | counter | `reason` (`capacity \| expired`) |
 | `pulsegate_cache_entries`, `pulsegate_cache_bytes` | gauge | — |
