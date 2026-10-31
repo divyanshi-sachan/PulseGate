@@ -24,6 +24,9 @@ including the request and response size-limit keys ADR-0018 deferred.
 | `rateLimit.mode` | `local` | `redis` **requires** `redisFailurePolicy: open \| closed` (no default, per ADR-0005) |
 | `responseCache.maxEntries` / `maxBytes` | `10000` / `67108864` (64 MiB) | Global cache bounds, LRU (ADR-0036) |
 | `responseCache.coalesce.maxWaitersPerKey` / `maxPendingKeys` | `1000` / `10000` | Request-deduplication bounds; beyond either, misses go upstream as before (ADR-0050) |
+| `upstreams[].targets` / `loadBalancing` | none (use `baseUrl`) / `round-robin` | Several interchangeable targets per upstream; exactly one of `baseUrl` and `targets`, at most 32 (ADR-0051) |
+| `upstreams[].outlierEjection` | `consecutiveFailures 5`, `ejectionMs 30000`, `maxEjectedPercent 50` | Passive per-target ejection (ADR-0051) |
+| `upstreams[].healthCheck` | off; with `path`: `intervalMs 5000`, `timeoutMs 1000`, `unhealthyThreshold 2`, `healthyThreshold 2` | Active GET of a fixed configured path (ADR-0051) |
 | `routes[].cache.coalesce` | `true` | Concurrent misses on one key make one upstream call; `false` opts the route out (ADR-0050, D3) |
 | `rateLimit.maxBuckets` | `100000` | Local-mode bucket cap before LRU eviction, max 10,000,000 (ADR-0032); also bounds the fail-open fallback |
 | `rateLimit.redis.commandTimeoutMs` / `connectTimeoutMs` | `350` (was `50`, raised by ADR-0048) / `2000` | Redis tuning; the URL itself comes only from `REDIS_URL` (ADR-0034) |

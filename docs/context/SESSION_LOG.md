@@ -437,3 +437,12 @@ Format: date · goal · what changed · decisions (ADR links) · open threads.
   repeats, OpenTelemetry depth, opt-in inbound request IDs, leasing off by default).
 - **State at this point:** dedup step 2 is still uncommitted (HEAD 15bc311); Docker is stopped.
 - **Decided by the user:** D2 = GitHub runner, 3 repeats; D3 = OpenTelemetry spans; order = plan order, dedup steps 3–4 around item 5.
+
+## 2026-10-31 · Portfolio improvements, item 1 step (a): targets, load balancing config, TargetSet
+- **Committed and pushed by the user:** dedup step 2 as `af1a9ea`; Docker started; full suite 581/581 before starting.
+- **Changed:** upstream config (`targets`, `loadBalancing`, `outlierEjection`, `healthCheck`, exactly one of
+  `baseUrl`/`targets`, aliases of `targets[0]` kept until step b); `TargetSet` in `packages/reliability` (round-robin,
+  least-connections, passive ejection, one-probe re-admission, forced pick, retry exclusion); ADR-0051; ADR-0026 rows;
+  example YAML; 6 config tests + 20 TargetSet tests; 6 mutations (88 in total); suite 607 passing.
+- **Found by a test:** the health-check path pattern accepted `//evil`; empty segments are now rejected.
+- **Next:** step (b), proxy integration, per-target pools, metrics and socket tests.

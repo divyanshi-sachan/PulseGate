@@ -521,3 +521,133 @@ describe('error reporting', () => {
     expect(message).toContain('  - routes[0] ("get-orders").timeoutMs:');
   });
 });
+
+describe('upstream targets, load balancing and health checks (ADR-0051)', () => {
+  const withUpstream = (upstream: Json) =>
+    withInput((c) => (c.upstreams[0] = { id: 'orders-service', ...upstream }));
+
+  it('resolves a single baseUrl to one target t0 and keeps the defaults', () => {
+    const upstream = parseConfig(minimal()).upstreams[0];
+    expect(upstream?.targets).toEqual([
+      { id: 't0', baseUrl: 'http://orders:4001', origin: 'http://orders:4001', basePath: '' },
+    ]);
+    expect(upstream?.loadBalancing).toBe('round-robin');
+    expect(upstream?.outlierEjection).toEqual({
+      consecutiveFailures: 5,
+      ejectionMs: 30_000,
+      maxEjectedPercent: 50,
+    });
+    expect(upstream?.healthCheck).toBeUndefined();
+  });
+
+  it('resolves several targets to bounded, index-based ids', () => {
+    const config = parseConfig(
+      withUpstream({
+        targets: ['http://a:4001/api/', 'http://b:4001', 'https://c:4443'],
+        loadBalancing: 'least-connections',
+      }),
+    );
+    const upstream = config.upstreams[0];
+    expect(upstream?.targets.map((t) => [t.id, t.baseUrl, t.basePath])).toEqual([
+      ['t0', 'http://a:4001/api', '/api'],
+      ['t1', 'http://b:4001', ''],
+      ['t2', 'https://c:4443', ''],
+    ]);
+    expect(upstream?.loadBalancing).toBe('least-connections');
+  });
+
+  it('requires exactly one of baseUrl and targets', () => {
+    expectIssue(
+      withUpstream({}),
+      'upstreams[0] ("orders-service").baseUrl',
+      /exactly one of "baseUrl" or "targets"/,
+    );
+    expectIssue(
+      withUpstream({ baseUrl: 'http://a:1', targets: ['http://b:1'] }),
+      'upstreams[0] ("orders-service").baseUrl',
+      /exactly one of "baseUrl" or "targets"/,
+    );
+  });
+
+  it('rejects an empty list, duplicates, more than 32 targets and invalid target URLs', () => {
+    expect(issuesOf(withUpstream({ targets: [] })).length).toBeGreaterThan(0);
+    expectIssue(
+      withUpstream({ targets: ['http://a:1', 'http://a:1'] }),
+      'upstreams[0] ("orders-service").targets',
+      'must not list the same target twice',
+    );
+    const many = Array.from({ length: 33 }, (_, i) => `http://h${String(i)}:1`);
+    expect(issuesOf(withUpstream({ targets: many })).length).toBeGreaterThan(0);
+    // Each target follows the baseUrl rules (ADR-0019): no credentials, query or non-http protocol.
+    expect(issuesOf(withUpstream({ targets: ['http://a:1', 'ftp://b:1'] })).length).toBeGreaterThan(
+      0,
+    );
+    expect(issuesOf(withUpstream({ targets: ['http://u:p@a:1'] })).length).toBeGreaterThan(0);
+  });
+
+  it('validates load balancing and outlier ejection settings', () => {
+    expect(
+      issuesOf(withUpstream({ baseUrl: 'http://a:1', loadBalancing: 'random' })).length,
+    ).toBeGreaterThan(0);
+    const config = parseConfig(
+      withUpstream({
+        targets: ['http://a:1', 'http://b:1'],
+        outlierEjection: { consecutiveFailures: 3, ejectionMs: 1000, maxEjectedPercent: 100 },
+      }),
+    );
+    expect(config.upstreams[0]?.outlierEjection).toEqual({
+      consecutiveFailures: 3,
+      ejectionMs: 1000,
+      maxEjectedPercent: 100,
+    });
+    for (const bad of [
+      { consecutiveFailures: 0 },
+      { ejectionMs: 0 },
+      { maxEjectedPercent: 0 },
+      { maxEjectedPercent: 101 },
+      { unknown: 1 },
+    ]) {
+      expect(
+        issuesOf(withUpstream({ targets: ['http://a:1', 'http://b:1'], outlierEjection: bad }))
+          .length,
+      ).toBeGreaterThan(0);
+    }
+  });
+
+  it('resolves a health check with defaults and rejects request-derived or unsafe paths', () => {
+    const config = parseConfig(
+      withUpstream({ baseUrl: 'http://a:1', healthCheck: { path: '/healthz' } }),
+    );
+    expect(config.upstreams[0]?.healthCheck).toEqual({
+      path: '/healthz',
+      intervalMs: 5000,
+      timeoutMs: 1000,
+      unhealthyThreshold: 2,
+      healthyThreshold: 2,
+    });
+    for (const path of [
+      'healthz',
+      '/health?x=1',
+      '/a#b',
+      '/../etc',
+      '/a/./b',
+      'http://evil/',
+      '//evil',
+      '/a b',
+      '',
+    ]) {
+      expect(
+        issuesOf(withUpstream({ baseUrl: 'http://a:1', healthCheck: { path } })).length,
+        `path ${JSON.stringify(path)}`,
+      ).toBeGreaterThan(0);
+    }
+    expectIssue(
+      withUpstream({
+        baseUrl: 'http://a:1',
+        healthCheck: { path: '/h', intervalMs: 1000, timeoutMs: 1000 },
+      }),
+      'upstreams[0] ("orders-service").healthCheck.timeoutMs',
+      'must be shorter than intervalMs',
+    );
+  });
+});

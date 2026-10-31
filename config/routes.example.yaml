@@ -42,6 +42,21 @@ upstreams: # the only place upstream URLs live (ADR-0013)
   - id: orders-service
     baseUrl: 'http://orders-mock:4001' # http/https, no query, fragment or credentials (ADR-0019)
 
+  # Several replicas behind one upstream id (ADR-0051): use `targets` instead of `baseUrl`.
+  # - id: inventory-service
+  #   targets: ['http://inventory-1:4003', 'http://inventory-2:4003']
+  #   loadBalancing: 'round-robin' # default; or 'least-connections'
+  #   outlierEjection: # defaults shown; passive, per target
+  #     consecutiveFailures: 5 # failed attempts in a row before a target is ejected
+  #     ejectionMs: 30000 # then one probe request at a time re-admits it
+  #     maxEjectedPercent: 50 # never ejects more than this share, nor the last target
+  #   healthCheck: # optional active check: GET of this fixed path on every target
+  #     path: '/healthz'
+  #     intervalMs: 5000
+  #     timeoutMs: 1000
+  #     unhealthyThreshold: 2
+  #     healthyThreshold: 2
+
   - id: payments-service
     baseUrl: 'http://payments-mock:4002'
     circuitBreaker:

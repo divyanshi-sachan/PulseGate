@@ -55,3 +55,4 @@ Accepted ADRs **override** the spec documents where they conflict. Create new on
 | [0048](0048-redis-command-timeout-default.md) | Raise the Redis command timeout default to 350 ms (Q15) | Accepted |
 | [0049](0049-q13-stampede-measured.md) | Cache stampede measured; request deduplication will be implemented (Q13) | Accepted (design plan next) |
 | [0050](0050-request-deduplication.md) | Request deduplication (single-flight) for cache misses | Accepted (design; step 1 done) |
+| [0051](0051-upstream-targets-and-load-balancing.md) | Upstream targets, load balancing and passive outlier ejection | Accepted (step a) |

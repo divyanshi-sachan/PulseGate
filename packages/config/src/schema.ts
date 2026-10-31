@@ -208,11 +208,64 @@ const circuitBreakerOverrideSchema = z.strictObject({
   failureStatuses: failureStatuses.optional(),
 });
 
-const upstreamSchema = z.strictObject({
-  id: identifier,
-  baseUrl,
-  circuitBreaker: circuitBreakerOverrideSchema.optional(),
-});
+/** Passive outlier ejection per target (ADR-0051): consecutive failed attempts eject a target for a while. */
+const outlierEjectionSchema = z
+  .strictObject({
+    consecutiveFailures: positiveInt.default(5),
+    ejectionMs: positiveInt.max(3_600_000).default(30_000),
+    /** Never ejects more than this share of an upstream's targets, and never the last one. */
+    maxEjectedPercent: z.int().min(1).max(100).default(50),
+  })
+  .prefault({});
+
+/** Active health check (ADR-0051): a GET of a fixed, configured path on each target; never request-derived. */
+const healthCheckSchema = z
+  .strictObject({
+    path: z
+      .string()
+      .regex(
+        /^\/[A-Za-z0-9._~/-]*$/,
+        'must be an absolute path without query or fragment, e.g. "/healthz"',
+      )
+      .refine(
+        (value) => !value.includes('//') && !value.split('/').some((s) => s === '.' || s === '..'),
+        'must not contain empty, "." or ".." segments',
+      ),
+    intervalMs: z.int().min(100).max(3_600_000).default(5000),
+    timeoutMs: z.int().min(1).max(60_000).default(1000),
+    unhealthyThreshold: positiveInt.default(2),
+    healthyThreshold: positiveInt.default(2),
+  })
+  .refine((check) => check.timeoutMs < check.intervalMs, {
+    message: 'must be shorter than intervalMs',
+    path: ['timeoutMs'],
+  });
+
+const MAX_TARGETS = 32;
+
+const upstreamSchema = z
+  .strictObject({
+    id: identifier,
+    /** One target. Mutually exclusive with `targets`. */
+    baseUrl: baseUrl.optional(),
+    /** Several interchangeable targets (replicas) behind one upstream id (ADR-0051). */
+    targets: z.array(baseUrl).min(1).max(MAX_TARGETS).optional(),
+    loadBalancing: z.enum(['round-robin', 'least-connections']).default('round-robin'),
+    outlierEjection: outlierEjectionSchema,
+    healthCheck: healthCheckSchema.optional(),
+    circuitBreaker: circuitBreakerOverrideSchema.optional(),
+  })
+  .refine((upstream) => (upstream.baseUrl === undefined) !== (upstream.targets === undefined), {
+    message: 'must define exactly one of "baseUrl" or "targets" (ADR-0051)',
+    path: ['baseUrl'],
+  })
+  .refine(
+    (upstream) => {
+      const hrefs = (upstream.targets ?? []).map((target) => target.href);
+      return new Set(hrefs).size === hrefs.length;
+    },
+    { message: 'must not list the same target twice', path: ['targets'] },
+  );
 
 const retryableStatus = z
   .int()
@@ -443,20 +496,38 @@ function resolve(config: BaseConfig) {
   const globalBreaker = config.circuitBreaker;
   return {
     ...config,
-    upstreams: config.upstreams.map(({ id, baseUrl: url, circuitBreaker: override }) => ({
-      id,
-      baseUrl: url.href,
-      origin: url.origin,
-      basePath: url.basePath,
-      circuitBreaker: {
-        failureThreshold: override?.failureThreshold ?? globalBreaker.failureThreshold,
-        openDurationMs: override?.openDurationMs ?? globalBreaker.openDurationMs,
-        halfOpenMaxRequests: override?.halfOpenMaxRequests ?? globalBreaker.halfOpenMaxRequests,
-        halfOpenSuccessThreshold:
-          override?.halfOpenSuccessThreshold ?? globalBreaker.halfOpenSuccessThreshold,
-        failureStatuses: override?.failureStatuses ?? globalBreaker.failureStatuses,
-      },
-    })),
+    upstreams: config.upstreams.map((upstream) => {
+      const { id, circuitBreaker: override } = upstream;
+      const urls = upstream.targets ?? (upstream.baseUrl === undefined ? [] : [upstream.baseUrl]);
+      const targets = urls.map((url, index) => ({
+        /** Bounded by config (t0, t1, ...): safe as a metric label, unlike a hostname (ADR-0051). */
+        id: `t${String(index)}`,
+        baseUrl: url.href,
+        origin: url.origin,
+        basePath: url.basePath,
+      }));
+      const first = targets[0];
+      if (first === undefined) throw new Error('unreachable: validated upstream has no target');
+      return {
+        id,
+        targets,
+        loadBalancing: upstream.loadBalancing,
+        outlierEjection: upstream.outlierEjection,
+        healthCheck: upstream.healthCheck,
+        // Aliases of targets[0], kept until the proxy uses targets (ADR-0051 step b); do not add new users.
+        baseUrl: first.baseUrl,
+        origin: first.origin,
+        basePath: first.basePath,
+        circuitBreaker: {
+          failureThreshold: override?.failureThreshold ?? globalBreaker.failureThreshold,
+          openDurationMs: override?.openDurationMs ?? globalBreaker.openDurationMs,
+          halfOpenMaxRequests: override?.halfOpenMaxRequests ?? globalBreaker.halfOpenMaxRequests,
+          halfOpenSuccessThreshold:
+            override?.halfOpenSuccessThreshold ?? globalBreaker.halfOpenSuccessThreshold,
+          failureStatuses: override?.failureStatuses ?? globalBreaker.failureStatuses,
+        },
+      };
+    }),
   };
 }
 
