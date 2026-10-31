@@ -3,6 +3,8 @@ import { collectDefaultMetrics, Counter, Gauge, Histogram, Registry } from 'prom
 
 export type BreakerStateName = 'closed' | 'open' | 'half-open';
 const BREAKER_STATES: readonly BreakerStateName[] = ['closed', 'open', 'half-open'];
+const TARGET_STATES = ['healthy', 'ejected', 'probing'] as const;
+export type TargetStateName = (typeof TARGET_STATES)[number];
 
 /** Codes beyond the error registry that may appear as the `code` label. */
 const EXTRA_CODES = ['none', 'CLIENT_ABORTED'] as const;
@@ -12,6 +14,8 @@ export interface MetricsOptions {
   routes: readonly string[];
   /** Configured upstream ids; anything else is recorded as "unknown". */
   upstreams: readonly string[];
+  /** Target ids per upstream id (`t0`, `t1`, ...): a bounded label set (ADR-0051). */
+  targets?: Readonly<Record<string, readonly string[]>>;
   /** Read on every scrape for the cache gauges. */
   cacheStats?: () => { entries: number; bytes: number };
   /** Process metrics (CPU, memory, event loop); off in tests that compare exact output. */
@@ -42,10 +46,19 @@ export class GatewayMetrics {
   readonly #cacheEvictions: Counter<'reason'>;
   readonly #breakerTransitions: Counter<'upstream' | 'from' | 'to'>;
   readonly #breakerState: Gauge<'upstream' | 'state'>;
+  readonly #targets: ReadonlySet<string>;
+  readonly #targetRequests: Counter<'upstream' | 'target' | 'outcome'>;
+  readonly #targetEjections: Counter<'upstream' | 'target'>;
+  readonly #targetState: Gauge<'upstream' | 'target' | 'state'>;
 
   constructor(options: MetricsOptions) {
     this.#routes = new Set(options.routes);
     this.#upstreams = new Set(options.upstreams);
+    this.#targets = new Set(
+      Object.entries(options.targets ?? {}).flatMap(([upstream, ids]) =>
+        ids.map((id) => `${upstream}/${id}`),
+      ),
+    );
     this.#codes = new Set([...Object.keys(GATEWAY_ERRORS), ...EXTRA_CODES]);
     const registers = [this.registry];
     if (options.defaultMetrics !== false) {
@@ -152,7 +165,28 @@ export class GatewayMetrics {
       labelNames: ['upstream', 'state'],
       registers,
     });
+    this.#targetRequests = new Counter({
+      name: 'pulsegate_upstream_target_requests_total',
+      help: 'Upstream attempts per target: success, failure, aborted (ADR-0051).',
+      labelNames: ['upstream', 'target', 'outcome'],
+      registers,
+    });
+    this.#targetEjections = new Counter({
+      name: 'pulsegate_upstream_target_ejections_total',
+      help: 'Targets ejected by passive outlier detection (ADR-0051).',
+      labelNames: ['upstream', 'target'],
+      registers,
+    });
+    this.#targetState = new Gauge({
+      name: 'pulsegate_upstream_target_state',
+      help: 'Current target state (1 for the current state, else 0): healthy, ejected, probing.',
+      labelNames: ['upstream', 'target', 'state'],
+      registers,
+    });
     for (const upstream of options.upstreams) this.#setBreakerState(upstream, 'closed');
+    for (const [upstream, ids] of Object.entries(options.targets ?? {})) {
+      for (const id of ids) this.#setTargetState(upstream, id, 'healthy');
+    }
   }
 
   get contentType(): string {
@@ -207,6 +241,33 @@ export class GatewayMetrics {
     const upstream = this.#upstream(upstreamId);
     this.#upstreamRequests.inc({ upstream, outcome });
     this.#upstreamDuration.observe({ upstream }, seconds);
+  }
+
+  upstreamTargetAttempt(
+    upstreamId: string,
+    targetId: string,
+    outcome: 'success' | 'failure' | 'aborted',
+  ): void {
+    this.#targetRequests.inc({ ...this.#targetLabels(upstreamId, targetId), outcome });
+  }
+
+  /** A target changed state; `ejected` also counts an ejection. */
+  targetStateChange(upstreamId: string, targetId: string, to: TargetStateName): void {
+    const labels = this.#targetLabels(upstreamId, targetId);
+    if (to === 'ejected') this.#targetEjections.inc(labels);
+    this.#setTargetState(labels.upstream, labels.target, to);
+  }
+
+  #targetLabels(upstreamId: string, targetId: string): { upstream: string; target: string } {
+    return this.#targets.has(`${upstreamId}/${targetId}`)
+      ? { upstream: upstreamId, target: targetId }
+      : { upstream: this.#upstream(upstreamId), target: 'unknown' };
+  }
+
+  #setTargetState(upstream: string, target: string, current: TargetStateName): void {
+    for (const state of TARGET_STATES) {
+      this.#targetState.set({ upstream, target, state }, state === current ? 1 : 0);
+    }
   }
 
   retries(routeId: string | undefined, count: number): void {

@@ -150,12 +150,12 @@ describe('baseUrl (ADR-0013, ADR-0019)', () => {
 
   it('normalizes the base path and drops trailing slashes', () => {
     const [upstream] = parseConfig(withBase('http://orders:4001/v1/')).upstreams;
-    expect(upstream).toMatchObject({
+    expect(upstream?.targets[0]).toMatchObject({
       baseUrl: 'http://orders:4001/v1',
       origin: 'http://orders:4001',
       basePath: '/v1',
     });
-    expect(parseConfig(withBase('https://orders')).upstreams[0]?.basePath).toBe('');
+    expect(parseConfig(withBase('https://orders')).upstreams[0]?.targets[0]?.basePath).toBe('');
   });
 
   it('rejects non-http protocols', () => {

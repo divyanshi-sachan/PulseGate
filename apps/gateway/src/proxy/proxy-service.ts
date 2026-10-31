@@ -12,7 +12,7 @@ import {
 import { GatewayError } from '@pulsegate/shared';
 import type { Dispatcher } from 'undici';
 import { buildUpstreamHeaders, filterResponseHeaders } from './headers.ts';
-import type { RegisteredUpstream } from './upstream-registry.ts';
+import type { RegisteredTarget, RegisteredUpstream } from './upstream-registry.ts';
 
 export interface ProxyLimits {
   maxRequestBodyBytes: number;
@@ -30,6 +30,7 @@ export interface ProxyServiceOptions {
     outcome: 'success' | 'failure' | 'aborted',
     seconds: number,
     routeId: string,
+    targetId: string,
   ) => void;
 }
 
@@ -147,33 +148,61 @@ export class ProxyService {
     this.#onAttemptSettled = options.onAttemptSettled;
   }
 
-  /** Reports the attempt's outcome and duration when its permit settles (exactly once). */
-  #observed(permit: BreakerPermit, upstreamId: string, routeId: string): BreakerPermit {
+  /**
+   * Starts one attempt: picks a target (avoiding `excludeIndex`, the one that just failed, when another can serve) and
+   * pairs the breaker permit with the target lease, so both settle together, exactly once, when the permit does:
+   * success → success, failure → failure, release (client left, gateway-decided error) → neutral for the target
+   * (ADR-0024, ADR-0051). Also reports the outcome, duration and target (ADR-0036 metrics).
+   */
+  #begin(
+    permit: BreakerPermit,
+    upstream: RegisteredUpstream,
+    routeId: string,
+    excludeIndex?: number,
+  ): { permit: BreakerPermit; target: RegisteredTarget; index: number } {
+    const lease = upstream.selector.acquire(excludeIndex);
+    const target = upstream.targets[lease.index];
+    if (target === undefined)
+      throw new Error(`Invariant: no target at index ${String(lease.index)}`);
     const report = this.#onAttemptSettled;
-    if (report === undefined) return permit;
     const started = performance.now();
     let reported = false;
-    const settle = (outcome: 'success' | 'failure' | 'aborted', apply: () => void) => {
+    const settle = (
+      outcome: 'success' | 'failure' | 'aborted',
+      targetOutcome: 'success' | 'failure' | 'neutral',
+      apply: () => void,
+    ) => {
       apply();
       if (reported) return;
       reported = true;
-      report(upstreamId, outcome, (performance.now() - started) / 1000, routeId);
+      lease.settle(targetOutcome);
+      report?.(
+        upstream.config.id,
+        outcome,
+        (performance.now() - started) / 1000,
+        routeId,
+        target.id,
+      );
     };
     return {
-      success: () => {
-        settle('success', () => {
-          permit.success();
-        });
-      },
-      failure: () => {
-        settle('failure', () => {
-          permit.failure();
-        });
-      },
-      release: () => {
-        settle('aborted', () => {
-          permit.release();
-        });
+      index: lease.index,
+      target,
+      permit: {
+        success: () => {
+          settle('success', 'success', () => {
+            permit.success();
+          });
+        },
+        failure: () => {
+          settle('failure', 'failure', () => {
+            permit.failure();
+          });
+        },
+        release: () => {
+          settle('aborted', 'neutral', () => {
+            permit.release();
+          });
+        },
       },
     };
   }
@@ -208,11 +237,11 @@ export class ProxyService {
       body?.destroy();
       throw new CircuitOpenError(first.retryAfterMs);
     }
-    let permit: BreakerPermit = this.#observed(first.permit, upstream.config.id, input.route.id);
+    let { permit, target, index } = this.#begin(first.permit, upstream, input.route.id);
 
     for (let attempt = 1; ; attempt++) {
       input.onAttempt?.();
-      const result = await this.#attempt(input, body, permit, deadline);
+      const result = await this.#attempt(input, body, permit, target, deadline);
       const canRetry = attempt < maxAttempts;
 
       if (result.kind === 'error') {
@@ -226,7 +255,7 @@ export class ProxyService {
           input.clientSignal,
         );
         if (next === undefined) throw result.error;
-        permit = this.#observed(next, upstream.config.id, input.route.id);
+        ({ permit, target, index } = this.#begin(next, upstream, input.route.id, index));
         continue;
       }
 
@@ -260,7 +289,7 @@ export class ProxyService {
         // Destroyed rather than drained: a retryable error body may be large, and reading it only
         // to keep one connection alive isn't worth it. Undici opens a new connection as needed.
         discard(response);
-        permit = this.#observed(next, upstream.config.id, input.route.id);
+        ({ permit, target, index } = this.#begin(next, upstream, input.route.id, index));
         continue;
       }
 
@@ -277,9 +306,10 @@ export class ProxyService {
     input: ForwardRequest,
     body: Readable | undefined,
     permit: BreakerPermit,
+    target: RegisteredTarget,
     deadline: AbortSignal,
   ): Promise<AttemptResult> {
-    const { request, route, upstream } = input;
+    const { request, route } = input;
     const attemptTimeout =
       route.attemptTimeoutMs === undefined
         ? undefined
@@ -290,8 +320,8 @@ export class ProxyService {
 
     let response: Dispatcher.ResponseData;
     try {
-      response = await upstream.dispatcher.request({
-        path: upstreamTarget(upstream.config.basePath, input.forwardedPath, input.rawQuery),
+      response = await target.dispatcher.request({
+        path: upstreamTarget(target.basePath, input.forwardedPath, input.rawQuery),
         method: request.method as Dispatcher.HttpMethod,
         headers: buildUpstreamHeaders(request.headers, {
           route,

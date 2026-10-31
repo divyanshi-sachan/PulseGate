@@ -71,7 +71,7 @@ measuring**, you commit and push at each commit point.
   re-admission; `maxEjectedPercent` ignored; health check runs a request-derived path.
 
 **Commit points:** (a) config schema, `TargetSet`/selector with unit tests, ADR **(done, ADR-0051)**; (b) proxy integration, metrics, socket
-tests; (c) active health checks; (d) admin contract and dashboard; (e) Docker failover test and report.
+tests **(done)**; (c) active health checks; (d) admin contract and dashboard; (e) Docker failover test and report.
 
 ## 3. Item 2: Toxiproxy fault-recovery suite (ADR-0052)
 - **Stack:** `docker-compose.faults.yml` adds a pinned Toxiproxy image with proxies gateway → upstream replicas and

@@ -1,7 +1,7 @@
 # ADR-0051: Upstream targets, load balancing and passive outlier ejection
 
-- **Status:** Accepted (design; step (a) of item 1 implemented: configuration and the `TargetSet` logic. Proxy
-  integration, active health checks, admin contract/dashboard and the Docker failover test follow, per
+- **Status:** Accepted (design; steps (a) configuration + `TargetSet` and (b) proxy integration, metrics and socket tests
+  implemented. Active health checks, admin contract/dashboard and the Docker failover test follow, per
   `docs/plans/portfolio-improvements.md` §2)
 - **Date:** 2026-10-31
 - **Source:** the 2026-10-31 audit (no load balancing across replicas) and the approved plan. D1 of the plan: the
@@ -66,3 +66,33 @@ bad replica among healthy ones: the healthy replicas' successes keep resetting i
 - Metrics and the admin contract gain targets in later steps (ADR-0036 table rows, `upstreams[].targets[]`).
 - The Docker failover test (kill one of three replicas under load) reports errors and time to ejection; its
   correctness gates are fixed in the plan, its numbers are reported as measured.
+
+## Proxy integration (step b, 2026-10-31)
+- **Registry:** `UpstreamRegistry` builds one undici `Pool` per target (128 connections each, `connectionsPerTarget`) and
+  one `TargetSet` per upstream, driven by the same injected reliability clock as the breakers (`breakerClock`). The
+  config aliases (`baseUrl`/`origin`/`basePath` of `targets[0]`) are gone; the admin API still shows the first target's URL
+  until step (d).
+- **One lease per attempt, paired with the breaker permit** (`ProxyService.#begin`): after the breaker allows an
+  attempt, the target is chosen (the previous attempt's target is excluded on a retry) and the lease settles together with
+  the permit, exactly once: success → success, failure → failure, **release (client left, gateway-decided error) →
+  neutral**. So the target and the breaker always classify an attempt identically (ADR-0024), and a target's in-flight
+  count lasts until the response body finishes, which is what least-connections needs.
+- **Metrics (ADR-0036 table):** `pulsegate_upstream_target_requests_total{upstream,target,outcome}`,
+  `pulsegate_upstream_target_ejections_total{upstream,target}`, `pulsegate_upstream_target_state{upstream,target,state}`.
+  `target` is validated against the configured ids (anything else becomes `unknown`). A state change logs
+  `upstream target state changed` (upstream, target, from, to) at warn level.
+- **Verified (11 socket tests, real replicas):**
+  - 300 sequential requests over 3 targets → exactly 100 each.
+  - Least-connections keeps traffic off a target holding a request (1 vs 10 + 10).
+  - A 503 target is ejected after exactly 3 failures: it receives 3 requests, clients see 3 503s, the rest alternate over
+    the others; metrics, the state gauge and the log agree, and the service breaker stayed closed.
+  - Upstream 404s never eject. Four abandoned client requests never eject (counted as `aborted`).
+  - A refused-connection target is ejected after 3 failures while every client request succeeds through retries.
+  - A retry lands on another target (also when least-connections would prefer the failed one, in both the status and the
+    connection-error paths); a hung target is cut by the attempt timeout and retried elsewhere within 1.5 s.
+  - Re-admission: no traffic while ejected; after the ejection time a probe succeeds and the target is healthy again
+    (`healthy→ejected`, `ejected→probing`, `probing→healthy`).
+- **5 more mutations, all caught (93 in total):** retry reusing the target after a status or an error, a client abort
+  counted as failure, leases never settled, and the ejection clock ignored. *Two of them first survived:* round-robin
+  already rotates away from the failed target in my first retry tests, so they could not tell whether the exclusion
+  worked. The least-connections tests above (a busy target vs a failed one) are the ones that can.

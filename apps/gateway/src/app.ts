@@ -247,8 +247,9 @@ function buildPublicServer(
     limits: config.server.limits,
     breakers,
     ...(options.random === undefined ? {} : { random: options.random }),
-    onAttemptSettled: (upstreamId, attemptOutcome, seconds, routeId) => {
+    onAttemptSettled: (upstreamId, attemptOutcome, seconds, routeId, targetId) => {
       metrics.upstreamAttempt(upstreamId, attemptOutcome, seconds);
+      metrics.upstreamTargetAttempt(upstreamId, targetId, attemptOutcome);
       stats?.recordAttempt({
         routeId,
         upstreamId,
@@ -784,7 +785,16 @@ export function createGateway(config: GatewayConfig, options: GatewayOptions = {
     options.limiter ??
     redisParts?.limiter ??
     new LocalTokenBucketLimiter({ maxBuckets: config.rateLimit.maxBuckets });
-  const upstreams = new UpstreamRegistry(config.upstreams);
+  const upstreams = new UpstreamRegistry(config.upstreams, {
+    ...(options.breakerClock === undefined ? {} : { now: options.breakerClock }),
+    onTargetStateChange: (upstreamId, change) => {
+      metrics.targetStateChange(upstreamId, change.id, change.to);
+      logRef.current?.warn(
+        { upstreamId, targetId: change.id, ...change },
+        'upstream target state changed',
+      );
+    },
+  });
   // Allocated only when someone can read it (plan §2.2: bounded by the configured routes and upstreams).
   const stats =
     verifier === undefined
@@ -799,6 +809,12 @@ export function createGateway(config: GatewayConfig, options: GatewayOptions = {
   const metrics = new GatewayMetrics({
     routes: config.routes.map((route) => route.id),
     upstreams: config.upstreams.map((upstream) => upstream.id),
+    targets: Object.fromEntries(
+      config.upstreams.map((upstream) => [
+        upstream.id,
+        upstream.targets.map((target) => target.id),
+      ]),
+    ),
     cacheStats: () => cacheRef.current?.stats() ?? { entries: 0, bytes: 0 },
     defaultMetrics: options.processMetrics ?? true,
   });

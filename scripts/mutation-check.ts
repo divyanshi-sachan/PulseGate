@@ -754,6 +754,48 @@ const MUTATIONS: Mutation[] = [
     tests: ['packages/reliability/src/target-set.test.ts'],
   },
   {
+    id: 'targets-status-retry-same-target',
+    guards: 'ADR-0051: a retry after a failed response lands on another target',
+    file: 'apps/gateway/src/proxy/proxy-service.ts',
+    find: '        discard(response);\n        ({ permit, target, index } = this.#begin(next, upstream, input.route.id, index));',
+    replace:
+      '        discard(response);\n        ({ permit, target, index } = this.#begin(next, upstream, input.route.id));',
+    tests: ['apps/gateway/test/targets.test.ts'],
+  },
+  {
+    id: 'targets-error-retry-same-target',
+    guards: 'ADR-0051: a retry after a connection error or timeout lands on another target',
+    file: 'apps/gateway/src/proxy/proxy-service.ts',
+    find: '        if (next === undefined) throw result.error;\n        ({ permit, target, index } = this.#begin(next, upstream, input.route.id, index));',
+    replace:
+      '        if (next === undefined) throw result.error;\n        ({ permit, target, index } = this.#begin(next, upstream, input.route.id));',
+    tests: ['apps/gateway/test/targets.test.ts'],
+  },
+  {
+    id: 'targets-abort-counts-against-target',
+    guards: 'ADR-0051: a client that gives up never counts against a target',
+    file: 'apps/gateway/src/proxy/proxy-service.ts',
+    find: "          settle('aborted', 'neutral', () => {",
+    replace: "          settle('aborted', 'failure', () => {",
+    tests: ['apps/gateway/test/targets.test.ts'],
+  },
+  {
+    id: 'targets-lease-never-settled',
+    guards: 'ADR-0051: every attempt settles its target lease, so failures can eject',
+    file: 'apps/gateway/src/proxy/proxy-service.ts',
+    find: '      lease.settle(targetOutcome);',
+    replace: '      void targetOutcome;',
+    tests: ['apps/gateway/test/targets.test.ts'],
+  },
+  {
+    id: 'targets-ejection-clock-ignored',
+    guards: 'ADR-0051: ejection ends on the injected reliability clock',
+    file: 'apps/gateway/src/app.ts',
+    find: '  const upstreams = new UpstreamRegistry(config.upstreams, {\n    ...(options.breakerClock === undefined ? {} : { now: options.breakerClock }),',
+    replace: '  const upstreams = new UpstreamRegistry(config.upstreams, {',
+    tests: ['apps/gateway/test/targets.test.ts'],
+  },
+  {
     id: 'ready-despite-redis-down',
     guards: 'ADR-0034: fail-closed readiness reflects Redis',
     file: 'apps/gateway/src/app.ts',

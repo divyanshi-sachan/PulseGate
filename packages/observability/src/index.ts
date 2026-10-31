@@ -1,4 +1,9 @@
-export { GatewayMetrics, type BreakerStateName, type MetricsOptions } from './metrics.ts';
+export {
+  GatewayMetrics,
+  type BreakerStateName,
+  type MetricsOptions,
+  type TargetStateName,
+} from './metrics.ts';
 export {
   effectiveSampleSize,
   nearestRank,

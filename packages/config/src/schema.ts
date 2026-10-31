@@ -506,18 +506,12 @@ function resolve(config: BaseConfig) {
         origin: url.origin,
         basePath: url.basePath,
       }));
-      const first = targets[0];
-      if (first === undefined) throw new Error('unreachable: validated upstream has no target');
       return {
         id,
         targets,
         loadBalancing: upstream.loadBalancing,
         outlierEjection: upstream.outlierEjection,
         healthCheck: upstream.healthCheck,
-        // Aliases of targets[0], kept until the proxy uses targets (ADR-0051 step b); do not add new users.
-        baseUrl: first.baseUrl,
-        origin: first.origin,
-        basePath: first.basePath,
         circuitBreaker: {
           failureThreshold: override?.failureThreshold ?? globalBreaker.failureThreshold,
           openDurationMs: override?.openDurationMs ?? globalBreaker.openDurationMs,

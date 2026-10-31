@@ -176,7 +176,8 @@ export function buildAdminServer(deps: AdminServerDeps) {
         return {
           id: upstream.id,
           // Validated config: http(s), no credentials, query or fragment (ADR-0013, ADR-0019).
-          baseUrl: upstream.baseUrl,
+          // The first target until the contract lists all of them (ADR-0051 step d).
+          baseUrl: upstream.targets[0]?.baseUrl ?? '',
           breaker: {
             state: snapshot.state,
             consecutiveFailures: snapshot.consecutiveFailures,

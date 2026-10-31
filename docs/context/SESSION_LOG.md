@@ -446,3 +446,13 @@ Format: date · goal · what changed · decisions (ADR links) · open threads.
   example YAML; 6 config tests + 20 TargetSet tests; 6 mutations (88 in total); suite 607 passing.
 - **Found by a test:** the health-check path pattern accepted `//evil`; empty segments are now rejected.
 - **Next:** step (b), proxy integration, per-target pools, metrics and socket tests.
+
+## 2026-10-31 · Item 1 step (b): targets in the proxy
+- **Committed by the user:** step (a) as `f602923`.
+- **Changed:** `UpstreamRegistry` (pool per target, `TargetSet` per upstream, `connectionsPerTarget`); `ProxyService.#begin` pairs
+  each attempt's breaker permit with a target lease (retries exclude the failed target; abort/gateway errors are neutral);
+  per-target metrics and state-change logs; config aliases removed; admin shows the first target's URL until step (d);
+  11 socket tests; 5 mutations (93 in total).
+- **Found by mutations:** two retry-exclusion mutations survived the first tests (round-robin rotates away anyway); added
+  least-connections tests where a busy target and a failed one make the exclusion necessary.
+- **Next:** step (c), active health checks.
